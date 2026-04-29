@@ -1,0 +1,112 @@
+body{
+    font-family: Arial;
+    background: #f4f6f9;
+}
+
+.login-box{
+    width: 350px;
+    margin: 120px auto;
+    padding: 30px;
+    background: white;
+    box-shadow: 0px 0px 10px gray;
+    text-align: center;
+}
+
+.login-box input{
+    width: 100%;
+    padding: 10px;
+
+    body{
+font-family: Arial;
+background:#f2f2f2;
+}
+
+.login-box{
+width:350px;
+margin:120px auto;
+padding:30px;
+background:white;
+box-shadow:0 0 10px gray;
+text-align:center;
+}
+
+.login-box input{
+width:100%;
+padding:10px;
+margin:10px 0;
+}
+
+.login-box button{
+width:100%;
+padding:10px;
+background:#007bff;
+color:white;
+border:none;
+}
+
+body {
+background: #f4f6f9;
+}
+
+.card {
+border-radius: 10px;
+}
+
+.navbar {
+height: 70px;
+}
+    margin: 10px 0;
+}
+
+.login-box button{
+    width: 100%;
+    padding: 10px;
+    background: #007bff;
+    color: white;
+    border: none;
+}
+
+.dashboard{
+    text-align: center;
+    margin-top: 150px;
+}
+
+body{
+font-family: Arial;
+background:#f2f2f2;
+}
+
+.login-box{
+width:350px;
+margin:120px auto;
+padding:30px;
+background:white;
+box-shadow:0 0 10px gray;
+text-align:center;
+}
+
+.login-box input{
+width:100%;
+padding:10px;
+margin:10px 0;
+}
+
+.login-box button{
+width:100%;
+padding:10px;
+background:#007bff;
+color:white;
+border:none;
+}
+
+body {
+background: #f4f6f9;
+}
+
+.card {
+border-radius: 10px;
+}
+
+.navbar {
+height: 70px;
+}

@@ -1,0 +1,9 @@
+/.env
+/.vscode/
+/vendor/
+/node_modules/
+/uploads/
+*.log
+mail_test_write.tmp
+Thumbs.db
+.DS_Store

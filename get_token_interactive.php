@@ -2,14 +2,22 @@
 // Simple script to get Microsoft Graph access token using authorization code flow
 // Requires League OAuth2 Client library (already in PHPMailer-master/vendor if installed)
 
+session_start();
 require 'PHPMailer-master/vendor/autoload.php'; // Adjust path if needed
 
 use Stevenmaguire\OAuth2\Client\Provider\Microsoft;
 
+$microsoftClientId = getenv("MICROSOFT_CLIENT_ID") ?: "";
+$microsoftClientSecret = getenv("MICROSOFT_CLIENT_SECRET") ?: "";
+
+if ($microsoftClientId === "" || $microsoftClientSecret === "") {
+    exit("Set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET in your local environment.");
+}
+
 $provider = new Microsoft([
-    'clientId'     => 'b8f85ab7-3fbf-4dc6-99df-256f8cf00fa7', // Your client ID
-    '$clientSecret = getenv("AZURE_CLIENT_SECRET");
-    'redirectUri'  => 'http://localhost/qualityassurancesystem/get_token_interactive.php', // Adjust to your URL
+    'clientId'     => $microsoftClientId,
+    'clientSecret' => $microsoftClientSecret,
+    'redirectUri'  => 'http://localhost/qualityassurancesystem---php-system-main/get_token_interactive.php', // Adjust to your URL
 ]);
 
 if (!isset($_GET['code'])) {

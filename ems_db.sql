@@ -53,6 +53,23 @@ INSERT INTO `documents` (`id`, `office`, `title`, `status`, `file_name`, `approv
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `audit_recommendations`
+--
+
+CREATE TABLE `audit_recommendations` (
+  `id` int(11) NOT NULL,
+  `audit_type` enum('External','Internal') NOT NULL,
+  `office` varchar(100) NOT NULL,
+  `recommendation` text NOT NULL,
+  `year` varchar(4) NOT NULL,
+  `status` enum('Pending','Submitted','Not Submitted') NOT NULL DEFAULT 'Pending',
+  `remarks` text DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `feedback`
 --
 
@@ -120,9 +137,27 @@ CREATE TABLE `sms_outbox` (
   `created_at` datetime DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `site_content`
+--
+
+CREATE TABLE `site_content` (
+  `content_key` varchar(150) NOT NULL,
+  `content_value` text NOT NULL,
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 --
 -- Indexes for dumped tables
 --
+
+--
+-- Indexes for table `audit_recommendations`
+--
+ALTER TABLE `audit_recommendations`
+  ADD PRIMARY KEY (`id`);
 
 --
 -- Indexes for table `documents`
@@ -155,8 +190,20 @@ ALTER TABLE `sms_outbox`
   ADD PRIMARY KEY (`id`);
 
 --
+-- Indexes for table `site_content`
+--
+ALTER TABLE `site_content`
+  ADD PRIMARY KEY (`content_key`);
+
+--
 -- AUTO_INCREMENT for dumped tables
 --
+
+--
+-- AUTO_INCREMENT for table `audit_recommendations`
+--
+ALTER TABLE `audit_recommendations`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `documents`

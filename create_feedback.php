@@ -1,9 +1,8 @@
 <?php
 session_start();
 require_once __DIR__ . "/database.php";
-require_once __DIR__ . "/mailer_config.php";
 
-if(!isset($_SESSION['username']) || $_SESSION['role'] != "admin"){
+if(!isset($_SESSION['admin_username']) || $_SESSION['admin_role'] != "admin"){
     header("Location: admin_login.php");
     exit();
 }
@@ -26,34 +25,7 @@ if(isset($_POST['create_feedback'])){
         $insert->bind_param("iss", $documentId, $doc['office'], $message);
         $insert->execute();
 
-        $feedbackUrl = "";
-        if(isset($_SERVER['HTTP_HOST'])){
-            $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https" : "http";
-            $feedbackUrl = $scheme . "://" . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']) . "/create_feedback.php?document_id=" . $documentId;
-        }
-
-        $recipientStmt = $conn->prepare("SELECT DISTINCT email FROM users WHERE office = ? AND email <> ''");
-        $recipientStmt->bind_param("s", $doc['office']);
-        $recipientStmt->execute();
-        $recipients = $recipientStmt->get_result();
-        $recipientCount = 0;
-        $sentCount = 0;
-
-        while($recipient = $recipients->fetch_assoc()){
-            $recipientCount++;
-            if(sendFeedbackNotification($recipient['email'], $doc['office'], $doc['title'], $doc['file_name'], $message, $feedbackUrl)){
-                $sentCount++;
-            }
-        }
-
-        if($sentCount > 0){
-            $alertMessage = "Feedback created successfully! Gmail notification sent.";
-        } elseif($recipientCount > 0){
-            $alertMessage = "Feedback created successfully! Office Gmail was found, but email sending failed. Check Gmail SMTP/app password or internet connection.";
-        } else {
-            $alertMessage = "Feedback created successfully! No Gmail is saved for " . $doc['office'] . ".";
-        }
-        echo "<script>alert(" . json_encode($alertMessage) . "); window.location='create_feedback.php';</script>";
+        echo "<script>alert('Feedback created successfully!'); window.location='create_feedback.php';</script>";
         exit();
     }
 

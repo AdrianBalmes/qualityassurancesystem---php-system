@@ -1,7 +1,6 @@
 <?php
 session_start();
 require_once __DIR__ . "/database.php";
-require_once __DIR__ . "/mailer_config.php";
 
 if(isset($_SESSION['admin_username'])){
     header("Location: home.php");
@@ -25,7 +24,6 @@ if(isset($_POST['login'])){
             $_SESSION['admin_role']     = $user['role'];
             $_SESSION['admin_office']   = $user['office'];
             $_SESSION['admin_user_id']  = $user['id'];
-            sendLoginNotification($user['email'], $user['username']);
             header("Location: home.php");
             exit();
         }

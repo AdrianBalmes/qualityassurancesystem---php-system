@@ -1,7 +1,6 @@
 <?php
 session_start();
 require_once __DIR__ . "/database.php";
-require_once __DIR__ . "/mailer_config.php";
 
 $error = "";
 
@@ -56,7 +55,6 @@ if(isset($_POST['login'])){
                 $_SESSION['office_user_id']  = $user['id'];
                 $_SESSION['office_email']    = $user['email'];
 
-                sendLoginNotification($user['email'], $user['username']);
                 header("Location: office_dashboard.php?office=" . urlencode($user['office']));
                 exit();
             }

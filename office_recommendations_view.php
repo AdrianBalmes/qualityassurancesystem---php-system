@@ -26,7 +26,7 @@ if($selectedOffice === ''){
     $count = 0;
 } else {
     $recommendations = fetch_office_recommendations($conn, $selectedOffice, $selectedAudit);
-    $rendered = render_office_recommendation_rows($recommendations, $selectedOffice, $selectedAudit, '#audit-recommendations');
+    $rendered = render_office_recommendation_rows($recommendations, $selectedOffice, $selectedAudit);
     $html = $rendered['html'];
     $count = $rendered['count'];
 }

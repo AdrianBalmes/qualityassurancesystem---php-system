@@ -140,6 +140,21 @@ CREATE TABLE `sms_outbox` (
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `recommendation_documents`
+--
+
+CREATE TABLE `recommendation_documents` (
+  `id` int(11) NOT NULL,
+  `recommendation_id` int(11) NOT NULL,
+  `office` varchar(100) NOT NULL,
+  `file_name` varchar(255) NOT NULL,
+  `original_name` varchar(255) NOT NULL,
+  `uploaded_at` datetime DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `site_content`
 --
 
@@ -196,6 +211,12 @@ ALTER TABLE `site_content`
   ADD PRIMARY KEY (`content_key`);
 
 --
+-- Indexes for table `recommendation_documents`
+--
+ALTER TABLE `recommendation_documents`
+  ADD PRIMARY KEY (`id`);
+
+--
 -- AUTO_INCREMENT for dumped tables
 --
 
@@ -233,6 +254,12 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `sms_outbox`
 --
 ALTER TABLE `sms_outbox`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `recommendation_documents`
+--
+ALTER TABLE `recommendation_documents`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 COMMIT;
 

@@ -3,8 +3,13 @@ session_start();
 require_once __DIR__ . "/database.php";
 require_once __DIR__ . "/sms_helper.php";
 
-if(isset($_SESSION['username'])){
-    header("Location: profile.php");
+if(isset($_SESSION['admin_username']) && $_SESSION['admin_role'] === 'admin'){
+    header("Location: admin_profile.php");
+    exit();
+}
+
+if(isset($_SESSION['office_username']) && isset($_SESSION['office_name'])){
+    header("Location: office_profile.php");
     exit();
 }
 

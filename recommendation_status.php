@@ -1,7 +1,7 @@
 <?php
 
 function classify_recommendation_status($row){
-    if($row['status'] === 'Submitted'){
+    if($row['status'] === 'Completed'){
         return 'Completed';
     }
     $year = trim($row['year'] ?? '');
@@ -9,6 +9,19 @@ function classify_recommendation_status($row){
         return 'Overdue';
     }
     return 'Ongoing';
+}
+
+function review_status_chip_info($status){
+    $map = [
+        'Pending' => ['label' => 'Pending', 'class' => 'chip-steel'],
+        'Not Submitted' => ['label' => 'Not Submitted', 'class' => 'chip-red'],
+        'Submitted' => ['label' => 'Awaiting Review', 'class' => 'chip-yellow'],
+        'Approved' => ['label' => 'Approved', 'class' => 'chip-blue'],
+        'Needs Revision' => ['label' => 'Needs Revision', 'class' => 'chip-orange'],
+        'Rejected' => ['label' => 'Rejected', 'class' => 'chip-red'],
+        'Completed' => ['label' => 'Completed', 'class' => 'chip-green'],
+    ];
+    return $map[$status] ?? ['label' => $status, 'class' => 'chip-steel'];
 }
 
 function compute_recommendation_stats($rows){

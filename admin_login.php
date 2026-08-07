@@ -1,6 +1,8 @@
 <?php
 session_start();
 require_once __DIR__ . "/database.php";
+require_once __DIR__ . "/profile_columns.php";
+require_once __DIR__ . "/audit_log_helper.php";
 
 if(isset($_SESSION['admin_username'])){
     header("Location: home.php");
@@ -24,10 +26,19 @@ if(isset($_POST['login'])){
             $_SESSION['admin_role']     = $user['role'];
             $_SESSION['admin_office']   = $user['office'];
             $_SESSION['admin_user_id']  = $user['id'];
+
+            ensure_profile_columns($conn);
+            $loginUpdate = $conn->prepare("UPDATE users SET last_login = NOW() WHERE id = ?");
+            $loginUpdate->bind_param("i", $user['id']);
+            $loginUpdate->execute();
+
+            log_audit_event($conn, $user['username'], 'admin', $user['office'], 'login', 'user', $user['id'], "Admin \"{$user['username']}\" logged in");
+
             header("Location: home.php");
             exit();
         }
     }
+    log_audit_event($conn, $username !== '' ? $username : '(blank)', 'admin', '', 'login_failed', 'user', null, "Failed admin login attempt for username \"{$username}\"");
     $error = "Invalid Admin Credentials!";
 }
 ?>

@@ -62,10 +62,18 @@ CREATE TABLE `audit_recommendations` (
   `office` varchar(100) NOT NULL,
   `recommendation` text NOT NULL,
   `year` varchar(4) NOT NULL,
-  `status` enum('Pending','Submitted','Not Submitted') NOT NULL DEFAULT 'Pending',
+  `status` varchar(20) NOT NULL DEFAULT 'Pending',
   `remarks` text DEFAULT NULL,
-  `created_at` datetime DEFAULT current_timestamp()
+  `created_at` datetime DEFAULT current_timestamp(),
+  `review_remarks` text DEFAULT '',
+  `reviewed_by` varchar(50) DEFAULT '',
+  `reviewed_at` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- `status` values: Pending, Not Submitted, Submitted (awaiting review),
+-- Approved, Needs Revision, Rejected, Completed.
+--
 
 -- --------------------------------------------------------
 
@@ -108,7 +116,10 @@ CREATE TABLE `users` (
   `email` varchar(100) NOT NULL,
   `phone` varchar(30) DEFAULT '',
   `role` varchar(20) NOT NULL,
-  `office` varchar(100) NOT NULL
+  `office` varchar(100) NOT NULL,
+  `profile_photo` varchar(255) DEFAULT '',
+  `created_at` datetime DEFAULT current_timestamp(),
+  `last_login` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
@@ -150,6 +161,25 @@ CREATE TABLE `recommendation_documents` (
   `file_name` varchar(255) NOT NULL,
   `original_name` varchar(255) NOT NULL,
   `uploaded_at` datetime DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `audit_log`
+--
+
+CREATE TABLE `audit_log` (
+  `id` int(11) NOT NULL,
+  `actor_username` varchar(50) NOT NULL,
+  `actor_role` varchar(20) NOT NULL,
+  `office` varchar(100) DEFAULT '',
+  `action` varchar(50) NOT NULL,
+  `entity_type` varchar(30) DEFAULT '',
+  `entity_id` int(11) DEFAULT NULL,
+  `description` text DEFAULT NULL,
+  `ip_address` varchar(45) DEFAULT '',
+  `created_at` datetime DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -217,6 +247,15 @@ ALTER TABLE `recommendation_documents`
   ADD PRIMARY KEY (`id`);
 
 --
+-- Indexes for table `audit_log`
+--
+ALTER TABLE `audit_log`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `action` (`action`),
+  ADD KEY `office` (`office`),
+  ADD KEY `created_at` (`created_at`);
+
+--
 -- AUTO_INCREMENT for dumped tables
 --
 
@@ -260,6 +299,12 @@ ALTER TABLE `sms_outbox`
 -- AUTO_INCREMENT for table `recommendation_documents`
 --
 ALTER TABLE `recommendation_documents`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `audit_log`
+--
+ALTER TABLE `audit_log`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 COMMIT;
 

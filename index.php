@@ -1,6 +1,8 @@
 <?php
 session_start();
 require_once __DIR__ . "/database.php";
+require_once __DIR__ . "/profile_columns.php";
+require_once __DIR__ . "/audit_log_helper.php";
 
 $error = "";
 
@@ -25,6 +27,7 @@ if(isset($_POST['login'])){
 
             if(!$passwordMatches){
                 $error = "Invalid Username or Password!";
+                log_audit_event($conn, $username, 'office', $user['office'] ?? '', 'login_failed', 'user', $user['id'], "Failed office login attempt for username \"{$username}\" (wrong password)");
             } elseif($user['role'] === "admin"){
                 $error = "Admins must use the Admin Login portal.";
             } elseif(trim($user['office']) === ""){
@@ -55,11 +58,19 @@ if(isset($_POST['login'])){
                 $_SESSION['office_user_id']  = $user['id'];
                 $_SESSION['office_email']    = $user['email'];
 
+                ensure_profile_columns($conn);
+                $loginUpdate = $conn->prepare("UPDATE users SET last_login = NOW() WHERE id = ?");
+                $loginUpdate->bind_param("i", $user['id']);
+                $loginUpdate->execute();
+
+                log_audit_event($conn, $user['username'], 'office', $user['office'], 'login', 'user', $user['id'], "{$user['office']} office user \"{$user['username']}\" logged in");
+
                 header("Location: office_dashboard.php?office=" . urlencode($user['office']));
                 exit();
             }
         } else {
             $error = "Invalid Username or Password!";
+            log_audit_event($conn, $username, 'office', '', 'login_failed', 'user', null, "Failed office login attempt for unknown username \"{$username}\"");
         }
     }
 }

@@ -7,6 +7,7 @@ require_once __DIR__ . "/office_directory.php";
 require_once __DIR__ . "/recommendation_status.php";
 require_once __DIR__ . "/audit_log_helper.php";
 require_once __DIR__ . "/review_columns.php";
+require_once __DIR__ . "/onedrive_sync.php";
 
 ensure_review_columns($conn);
 
@@ -44,10 +45,11 @@ if(isset($_POST['submit_compliance'])){
     $recId = intval($_POST['recommendation_id'] ?? 0);
     $complianceResponse = trim($_POST['compliance_response'] ?? '');
 
-    $ownStmt = $conn->prepare("SELECT id FROM audit_recommendations WHERE id = ? AND office = ? LIMIT 1");
+    $ownStmt = $conn->prepare("SELECT id, year FROM audit_recommendations WHERE id = ? AND office = ? LIMIT 1");
     $ownStmt->bind_param("is", $recId, $office);
     $ownStmt->execute();
-    $ownsRow = $ownStmt->get_result()->num_rows > 0;
+    $ownedRec = $ownStmt->get_result()->fetch_assoc();
+    $ownsRow = $ownedRec !== null;
 
     if(!$ownsRow){
         echo "<script>alert('That recommendation does not belong to your office.'); window.location=" . json_encode($officeDashboardUrl) . ";</script>";
@@ -79,8 +81,14 @@ if(isset($_POST['submit_compliance'])){
             $docStmt = $conn->prepare("INSERT INTO recommendation_documents (recommendation_id, office, file_name, original_name) VALUES (?,?,?,?)");
             $docStmt->bind_param("isss", $recId, $office, $file_name, $original_name);
             $docStmt->execute();
+            $documentId = $conn->insert_id;
 
-            log_audit_event($conn, $_SESSION['office_username'], 'office', $office, 'document_uploaded', 'document', $conn->insert_id, "{$office} uploaded supporting document \"{$original_name}\" for recommendation #{$recId}");
+            log_audit_event($conn, $_SESSION['office_username'], 'office', $office, 'document_uploaded', 'document', $documentId, "{$office} uploaded supporting document \"{$original_name}\" for recommendation #{$recId}");
+
+            // Mirror the file into the shared OneDrive repository. This never
+            // throws -- if OneDrive is unreachable the file is queued and
+            // onedrive_worker.php retries it later.
+            od_queue_and_sync($conn, 'recommendation_documents', $documentId, $office, $file_name, $original_name, $ownedRec['year'] ?? '');
         }
     }
 

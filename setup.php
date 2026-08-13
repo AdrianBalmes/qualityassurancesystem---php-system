@@ -8,8 +8,8 @@
  * Brings the database up to what the code expects and creates the directories
  * the app writes to. Safe to run repeatedly -- every step checks before acting.
  *
- * Why this exists: several helpers (profile_columns.php, feedback_columns.php,
- * review_columns.php) try to self-add missing columns by running
+ * Why this exists: several helpers (profile_columns.php, review_columns.php)
+ * try to self-add missing columns by running
  * "SELECT <col> FROM <table>" and testing for a falsy return. Since PHP 8.1
  * mysqli throws on a failed query instead of returning false, so those probes
  * abort the request before their own ALTER TABLE can run. This script uses
@@ -43,10 +43,6 @@ ensure_column($conn, 'users', 'phone',         "varchar(30) DEFAULT ''", $change
 ensure_column($conn, 'users', 'profile_photo', "varchar(255) DEFAULT ''", $changes);
 ensure_column($conn, 'users', 'created_at',    "datetime DEFAULT CURRENT_TIMESTAMP", $changes);
 ensure_column($conn, 'users', 'last_login',    "datetime DEFAULT NULL", $changes);
-
-// feedback_columns.php -- absent from ems_db.sql, so a fresh import lacks them.
-ensure_column($conn, 'feedback', 'attachment_name',          "varchar(255) DEFAULT ''", $changes);
-ensure_column($conn, 'feedback', 'attachment_original_name', "varchar(255) DEFAULT ''", $changes);
 
 // review_columns.php. TEXT columns cannot carry a DEFAULT on MySQL 8, though
 // MariaDB permits it -- so review_remarks is added without one.

@@ -96,11 +96,6 @@ if(isset($_POST['submit_compliance'])){
     exit();
 }
 
-$feedbackStmt = $conn->prepare("SELECT f.document_id, f.message, f.date_sent, d.title, d.file_name, d.file_link FROM feedback f LEFT JOIN documents d ON f.document_id = d.id WHERE f.office = ? ORDER BY f.date_sent DESC LIMIT 10");
-$feedbackStmt->bind_param("s", $office);
-$feedbackStmt->execute();
-$feedbackMessages = $feedbackStmt->get_result();
-
 $recStmt = $conn->prepare("SELECT * FROM audit_recommendations WHERE office = ? ORDER BY year DESC, id DESC");
 $recStmt->bind_param("s", $office);
 $recStmt->execute();
@@ -202,11 +197,6 @@ body{margin:0;background:#f1f5fb;color:#344156;font-family:Arial,Helvetica,sans-
 .icon-compliance{background:#7a5fd6}
 .charts-grid{display:grid;grid-template-columns:minmax(320px,1fr) minmax(420px,1.4fr);gap:16px;margin-bottom:20px}
 .chart-box{height:260px;position:relative}
-.feedback-list{display:grid;gap:10px;max-height:420px;overflow:auto}
-.feedback-item{border:1px solid #dbe3ef;background:#f8fbff;border-radius:7px;padding:12px}
-.feedback-title{font-weight:800;color:#344156}
-.feedback-date{color:#66758d;font-size:12px;font-weight:800}
-.feedback-body{margin:7px 0 0;color:#344156;font-size:14px;line-height:1.45;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere}
 .form-label{font-weight:800}
 .table-wrap{overflow-x:auto}
 .dashboard-table{min-width:650px}
@@ -257,7 +247,6 @@ img,canvas,svg{max-width:100%}
             <a href="index.php">Login Office</a>
             <a href="repository.php">Repository</a>
             <button type="button" data-bs-toggle="modal" data-bs-target="#allDocumentsModal"><i class="bi bi-folder2-open"></i> My Documents</button>
-            <button type="button" data-bs-toggle="modal" data-bs-target="#feedbackModal">QA Feedback</button>
             <a href="office_profile.php"><i class="bi bi-person-circle"></i> Profile</a>
         </nav>
     </div>
@@ -442,40 +431,6 @@ img,canvas,svg{max-width:100%}
                             ?>
                         </tbody>
                     </table>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="modal fade" id="feedbackModal" tabindex="-1" aria-labelledby="feedbackModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="feedbackModalLabel">QA Feedback Messages</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <div class="feedback-list">
-                    <?php
-                    if($feedbackMessages && mysqli_num_rows($feedbackMessages) > 0){
-                        while($fb = mysqli_fetch_assoc($feedbackMessages)){
-                            $fbTitle = htmlspecialchars($fb['title'] ?? 'Document removed', ENT_QUOTES);
-                            $fbFileName = htmlspecialchars($fb['file_name'] ?? 'N/A', ENT_QUOTES);
-                            $fbMessage = htmlspecialchars($fb['message'], ENT_QUOTES);
-                            $fbDate = htmlspecialchars($fb['date_sent'], ENT_QUOTES);
-                            $viewUrl = !empty($fb['document_id']) ? "view_document.php?id=" . (int) $fb['document_id'] . "&office=" . urlencode($office) : "";
-                            $safeViewUrl = htmlspecialchars($viewUrl, ENT_QUOTES);
-                            echo "<article class='feedback-item'><div class='feedback-title'>{$fbTitle}</div><div class='muted-copy'>{$fbFileName}</div><div class='feedback-date'>{$fbDate}</div><p class='feedback-body'>{$fbMessage}</p>";
-                            if($safeViewUrl !== ""){
-                                echo "<a class='link-strong d-inline-block mt-2' href='{$safeViewUrl}' target='_blank'>Open Document</a>";
-                            }
-                            echo "</article>";
-                        }
-                    } else {
-                        echo "<div class='empty-state'>No QA feedback messages yet</div>";
-                    }
-                    ?>
                 </div>
             </div>
         </div>

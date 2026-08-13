@@ -177,6 +177,13 @@ body{margin:0;background:#f1f5fb;color:#344156;font-family:Arial,Helvetica,sans-
 .brand-icon{width:38px;height:38px;border-radius:8px;background:#fff;color:#316fc4;display:grid;place-items:center}
 .nav-links{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
 .nav-links a,.nav-links button{color:#eef4ff;text-decoration:none;font-weight:700;background:none;border:0;padding:0}
+.nav-dropdown-toggle{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+/* .nav-links a above would paint these near-white on the white menu. */
+.nav-links .dropdown-menu{padding:6px;border:1px solid #dbe3ef;border-radius:8px;box-shadow:0 8px 22px rgba(44,74,119,.18);min-width:200px}
+.nav-links .dropdown-item{color:#344156;font-weight:700;font-size:13.5px;border-radius:5px;padding:9px 12px;display:flex;align-items:center;gap:9px}
+.nav-links .dropdown-item:hover,.nav-links .dropdown-item:focus{background:#eef4ff;color:#2e67b8}
+.nav-links .dropdown-item.signout{color:#c23b36}
+.nav-links .dropdown-item.signout:hover,.nav-links .dropdown-item.signout:focus{background:#ffe1dc;color:#a5302b}
 .page{max-width:1680px;margin:26px auto 42px;padding:0 clamp(14px,2vw,32px)}
 .page-head{display:flex;align-items:end;justify-content:space-between;gap:16px;margin-bottom:18px;flex-wrap:wrap}
 .page-title{margin:0;font-size:26px;font-weight:800}
@@ -244,10 +251,16 @@ img,canvas,svg{max-width:100%}
         <div class="brand"><span class="brand-icon"><i class="bi bi-file-earmark-text-fill"></i></span><?php sc_span($siteContent, 'office.brand', 'SBC Quality Assurance Electronic Documentation'); ?></div>
         <nav class="nav-links">
             <a href="<?php echo htmlspecialchars($officeDashboardUrl, ENT_QUOTES); ?>">Dashboard</a>
-            <a href="index.php">Login Office</a>
             <a href="repository.php">Repository</a>
             <button type="button" data-bs-toggle="modal" data-bs-target="#allDocumentsModal"><i class="bi bi-folder2-open"></i> My Documents</button>
-            <a href="office_profile.php"><i class="bi bi-person-circle"></i> Profile</a>
+            <div class="dropdown">
+                <button type="button" class="nav-dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-person-circle"></i> Profile <i class="bi bi-chevron-down" style="font-size:11px"></i></button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li><a class="dropdown-item" href="office_profile.php?office=<?php echo urlencode($office); ?>"><i class="bi bi-person-circle"></i> Office Profile</a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item signout" href="logout.php"><i class="bi bi-box-arrow-right"></i> Sign Out</a></li>
+                </ul>
+            </div>
         </nav>
     </div>
 </header>

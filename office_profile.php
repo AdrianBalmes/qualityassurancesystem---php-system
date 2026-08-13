@@ -169,7 +169,6 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
         <div class="brand"><span class="brand-icon"><i class="bi bi-person-circle"></i></span><span>Office Profile</span></div>
         <nav class="nav-links">
             <a href="<?php echo htmlspecialchars($officeDashboardUrl, ENT_QUOTES); ?>"><i class="bi bi-speedometer2"></i> Office Dashboard</a>
-            <a href="index.php"><i class="bi bi-box-arrow-in-right"></i> Login Office</a>
             <a href="logout.php"><i class="bi bi-box-arrow-right"></i> Logout</a>
         </nav>
     </div>

@@ -95,6 +95,9 @@ function render_office_recommendation_rows($rows, $selectedOffice, $selectedAudi
     return ['html' => $html, 'count' => $count];
 }
 
-function render_select_office_placeholder(){
-    return "<tr><td colspan='7' class='empty-state'>Select an office below to view its recommendations.</td></tr>";
+/** Heading for the recommendations grid. An empty office means every office. */
+function office_recommendations_title($selectedOffice){
+    return $selectedOffice === ''
+        ? 'All Offices Recommendations'
+        : $selectedOffice . ' Recommendations';
 }

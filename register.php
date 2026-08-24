@@ -16,7 +16,7 @@ sort($offices);
 
 $error = "";
 $success = "";
-$form = ['full_name' => '', 'username' => '', 'email' => '', 'phone' => '', 'office' => ''];
+$form = ['full_name' => '', 'username' => '', 'email' => '', 'phone' => '', 'office' => '', 'account_type' => 'user'];
 
 if(isset($_POST['register'])){
     $form['full_name'] = trim($_POST['full_name'] ?? '');
@@ -24,16 +24,25 @@ if(isset($_POST['register'])){
     $form['email']     = trim($_POST['email'] ?? '');
     $form['phone']     = trim($_POST['phone'] ?? '');
     $form['office']    = trim($_POST['office'] ?? '');
+    $form['account_type'] = ($_POST['account_type'] ?? 'user') === 'admin' ? 'admin' : 'user';
+    $wantsAdmin        = $form['account_type'] === 'admin';
+
+    // An administrator is not attached to a department.
+    if($wantsAdmin){
+        $form['office'] = 'Admin';
+    }
     $password          = (string) ($_POST['password'] ?? '');
     $confirmPassword   = (string) ($_POST['confirm_password'] ?? '');
 
     if($form['full_name'] === '' || $form['username'] === '' || $form['email'] === '' || $form['office'] === ''){
-        $error = "Full name, username, email and department are all required.";
+        $error = $wantsAdmin
+            ? "Full name, username and email are all required."
+            : "Full name, username, email and department are all required.";
     } elseif(!preg_match('/^[A-Za-z0-9._-]{3,50}$/', $form['username'])){
         $error = "Username must be 3-50 characters, using letters, numbers, dot, underscore or hyphen only.";
     } elseif(!filter_var($form['email'], FILTER_VALIDATE_EMAIL)){
         $error = "Please enter a valid email address.";
-    } elseif(!in_array($form['office'], $offices, true)){
+    } elseif(!$wantsAdmin && !in_array($form['office'], $offices, true)){
         $error = "Please choose a department from the list.";
     } elseif(strlen($password) < 8){
         $error = "Password must be at least 8 characters.";
@@ -50,7 +59,9 @@ if(isset($_POST['register'])){
             $error = "That username is already taken. Please choose another.";
         } else {
             $hashed = password_hash($password, PASSWORD_DEFAULT);
-            $role = 'user';
+            // Role comes from the vetted account_type, never straight from the
+            // request, and every account still needs an admin to approve it.
+            $role = $wantsAdmin ? 'admin' : 'user';
             $pending = USER_STATUS_PENDING;
 
             $insert = $conn->prepare("INSERT INTO users (username, password, email, phone, role, office, full_name, status) VALUES (?,?,?,?,?,?,?,?)");
@@ -58,11 +69,12 @@ if(isset($_POST['register'])){
             $insert->execute();
             $newUserId = $conn->insert_id;
 
-            log_audit_event($conn, $form['username'], 'office', $form['office'], 'registration_submitted', 'user', $newUserId,
-                "{$form['full_name']} requested a {$form['office']} account (username \"{$form['username']}\")");
+            $whatKind = $wantsAdmin ? 'an administrator' : "a {$form['office']}";
+            log_audit_event($conn, $form['username'], $wantsAdmin ? 'admin' : 'office', $form['office'], 'registration_submitted', 'user', $newUserId,
+                "{$form['full_name']} requested {$whatKind} account (username \"{$form['username']}\")");
 
             $success = "Registration submitted. An administrator will review your request, and you can sign in once it is approved.";
-            $form = ['full_name' => '', 'username' => '', 'email' => '', 'phone' => '', 'office' => ''];
+            $form = ['full_name' => '', 'username' => '', 'email' => '', 'phone' => '', 'office' => '', 'account_type' => 'user'];
         }
     }
 }
@@ -114,8 +126,17 @@ body{background:linear-gradient(135deg,#f6f8fb 0%,#e9effd 100%);font-family:'Int
                 </div>
 
                 <div class="mb-3">
+                    <label class="form-label">Account Type</label>
+                    <select name="account_type" id="accountType" class="form-select">
+                        <option value="user"<?php echo $form['account_type'] !== 'admin' ? ' selected' : ''; ?>>Department User</option>
+                        <option value="admin"<?php echo $form['account_type'] === 'admin' ? ' selected' : ''; ?>>Administrator</option>
+                    </select>
+                    <div class="hint mt-1" id="accountTypeHint"></div>
+                </div>
+
+                <div class="mb-3" id="departmentBlock">
                     <label class="form-label">Department</label>
-                    <select name="office" class="form-select" required>
+                    <select name="office" id="officeSelect" class="form-select">
                         <option value="">Select your department…</option>
                         <?php foreach($offices as $office): ?>
                             <option value="<?php echo htmlspecialchars($office, ENT_QUOTES); ?>"<?php echo $form['office'] === $office ? ' selected' : ''; ?>>
@@ -164,5 +185,28 @@ body{background:linear-gradient(135deg,#f6f8fb 0%,#e9effd 100%);font-family:'Int
         <?php endif; ?>
     </div>
 </div>
+<script>
+(function(){
+    var type = document.getElementById('accountType');
+    if(!type){ return; }
+    var block = document.getElementById('departmentBlock');
+    var select = document.getElementById('officeSelect');
+    var hint = document.getElementById('accountTypeHint');
+
+    function sync(){
+        var isAdmin = type.value === 'admin';
+        block.style.display = isAdmin ? 'none' : '';
+        // Required only when it is actually on screen, or the browser blocks
+        // submission on a field the user cannot see.
+        select.required = !isAdmin;
+        hint.textContent = isAdmin
+            ? 'Administrators oversee every department. An existing administrator must approve this request.'
+            : 'Your request is reviewed by an administrator before you can sign in.';
+    }
+
+    type.addEventListener('change', sync);
+    sync();
+})();
+</script>
 </body>
 </html>

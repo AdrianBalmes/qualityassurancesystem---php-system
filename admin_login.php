@@ -2,7 +2,10 @@
 session_start();
 require_once __DIR__ . "/database.php";
 require_once __DIR__ . "/profile_columns.php";
+require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/audit_log_helper.php";
+
+ensure_user_account_columns($conn);
 
 if(isset($_SESSION['admin_username'])){
     header("Location: home.php");
@@ -22,6 +25,24 @@ if(isset($_POST['login'])){
     if($result->num_rows === 1){
         $user = $result->fetch_assoc();
         if(password_verify($password, $user['password']) || hash_equals($user['password'], $password)){
+
+            // An admin account still awaiting approval, or revoked, cannot sign in.
+            $blockReason = user_login_block_reason($user);
+            if($blockReason !== ''){
+                log_audit_event($conn, $username, 'admin', $user['office'] ?? '', 'login_blocked', 'user', $user['id'], "Admin sign-in refused for \"{$username}\": account is {$user['status']}");
+                $error = $blockReason;
+                $blocked = true;
+            } else {
+
+            // Legacy plaintext passwords are upgraded on first successful sign-in.
+            if(!password_get_info($user['password'])['algo']){
+                $rehash = password_hash($password, PASSWORD_DEFAULT);
+                $rehashStmt = $conn->prepare("UPDATE users SET password = ? WHERE id = ?");
+                $rehashStmt->bind_param("si", $rehash, $user['id']);
+                $rehashStmt->execute();
+            }
+
+            $_SESSION['admin_full_name'] = $user['full_name'] ?? '';
             $_SESSION['admin_username'] = $user['username'];
             $_SESSION['admin_role']     = $user['role'];
             $_SESSION['admin_office']   = $user['office'];
@@ -36,10 +57,13 @@ if(isset($_POST['login'])){
 
             header("Location: home.php");
             exit();
+            }
         }
     }
-    log_audit_event($conn, $username !== '' ? $username : '(blank)', 'admin', '', 'login_failed', 'user', null, "Failed admin login attempt for username \"{$username}\"");
-    $error = "Invalid Admin Credentials!";
+    if(empty($blocked)){
+        log_audit_event($conn, $username !== '' ? $username : '(blank)', 'admin', '', 'login_failed', 'user', null, "Failed admin login attempt for username \"{$username}\"");
+        $error = "Invalid Admin Credentials!";
+    }
 }
 ?>
 <!DOCTYPE html>

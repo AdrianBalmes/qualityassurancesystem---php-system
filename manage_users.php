@@ -12,6 +12,7 @@ if(!isset($_SESSION['admin_username']) || $_SESSION['admin_role'] !== 'admin'){
 }
 
 ensure_user_account_columns($conn);
+enforce_active_account($conn);
 $siteContent = sc_load($conn);
 $adminUsername = $_SESSION['admin_username'];
 $notice = "";
@@ -26,17 +27,26 @@ if(isset($_POST['review_user'])){
         $notice = "Unknown decision.";
         $noticeType = "danger";
     } else {
-        $lookup = $conn->prepare("SELECT username, full_name, office, role FROM users WHERE id = ? LIMIT 1");
+        $lookup = $conn->prepare("SELECT username, full_name, office, role, status FROM users WHERE id = ? LIMIT 1");
         $lookup->bind_param("i", $userId);
         $lookup->execute();
         $target = $lookup->get_result()->fetch_assoc();
 
+        $losingAnAdmin = $target
+            && $target['role'] === 'admin'
+            && $target['status'] === USER_STATUS_APPROVED
+            && $decision === USER_STATUS_REJECTED;
+
         if(!$target){
             $notice = "That account no longer exists.";
             $noticeType = "danger";
-        } elseif($target['role'] === 'admin'){
-            // Guard rail: an admin account must never be gated by this queue.
-            $notice = "Administrator accounts cannot be reviewed here.";
+        } elseif($target['username'] === $adminUsername && $decision === USER_STATUS_REJECTED){
+            // Without this an admin could revoke themselves mid-session.
+            $notice = "You cannot revoke your own account.";
+            $noticeType = "danger";
+        } elseif($losingAnAdmin && approved_admin_count($conn) <= 1){
+            // Never leave the system with nobody able to approve anyone.
+            $notice = "This is the last approved administrator. Approve another one before revoking this account.";
             $noticeType = "danger";
         } else {
             $update = $conn->prepare("UPDATE users SET status = ?, reviewed_by = ?, reviewed_at = NOW(), review_reason = ? WHERE id = ?");
@@ -61,7 +71,7 @@ if(!in_array($filter, [USER_STATUS_PENDING, USER_STATUS_APPROVED, USER_STATUS_RE
 }
 
 $counts = [USER_STATUS_PENDING => 0, USER_STATUS_APPROVED => 0, USER_STATUS_REJECTED => 0];
-$countResult = mysqli_query($conn, "SELECT status, COUNT(*) AS total FROM users WHERE role <> 'admin' GROUP BY status");
+$countResult = mysqli_query($conn, "SELECT status, COUNT(*) AS total FROM users GROUP BY status");
 while($countRow = $countResult->fetch_assoc()){
     $status = $countRow['status'] !== '' ? $countRow['status'] : USER_STATUS_APPROVED;
     if(isset($counts[$status])){
@@ -70,14 +80,15 @@ while($countRow = $countResult->fetch_assoc()){
 }
 
 if($filter === 'all'){
-    $listResult = mysqli_query($conn, "SELECT * FROM users WHERE role <> 'admin' ORDER BY FIELD(status,'pending','rejected','approved'), created_at DESC, id DESC");
+    $listResult = mysqli_query($conn, "SELECT * FROM users ORDER BY FIELD(status,'pending','rejected','approved'), role DESC, created_at DESC, id DESC");
 } else {
-    $listStmt = $conn->prepare("SELECT * FROM users WHERE role <> 'admin' AND status = ? ORDER BY created_at DESC, id DESC");
+    $listStmt = $conn->prepare("SELECT * FROM users WHERE status = ? ORDER BY role DESC, created_at DESC, id DESC");
     $listStmt->bind_param("s", $filter);
     $listStmt->execute();
     $listResult = $listStmt->get_result();
 }
 $userRows = $listResult ? $listResult->fetch_all(MYSQLI_ASSOC) : [];
+$approvedAdmins = approved_admin_count($conn);
 
 function mu_chip($status){
     if($status === USER_STATUS_PENDING){ return 'chip-yellow'; }
@@ -121,6 +132,8 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
 .chip-green{background:#cdeedc;color:#277548}
 .chip-yellow{background:#fff0ba;color:#806119}
 .chip-red{background:#ffd6d0;color:#a33831}
+.chip-purple{background:#efe9fb;color:#5b3fa0}
+.chip-steel{background:#e4e9f1;color:#4c5a72}
 .row-actions{display:flex;gap:6px;flex-wrap:wrap}
 .btn-approve,.btn-reject,.btn-revoke{border:0;border-radius:5px;font-weight:800;font-size:12px;padding:7px 12px;display:inline-flex;align-items:center;gap:5px;cursor:pointer}
 .btn-approve{background:#2fa66a;color:#fff}
@@ -165,6 +178,7 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
                 <thead>
                     <tr>
                         <th>User</th>
+                        <th style="width:120px">Role</th>
                         <th>Department</th>
                         <th>Contact</th>
                         <th style="width:150px">Status</th>
@@ -174,17 +188,25 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
                 </thead>
                 <tbody>
                 <?php if(empty($userRows)): ?>
-                    <tr><td colspan="6" class="empty-state">No accounts in this list.</td></tr>
+                    <tr><td colspan="7" class="empty-state">No accounts in this list.</td></tr>
                 <?php else: foreach($userRows as $row):
                     $status = $row['status'] !== '' ? $row['status'] : USER_STATUS_APPROVED;
                     $displayName = trim($row['full_name']) !== '' ? $row['full_name'] : $row['username'];
+                    $isAdminRow = $row['role'] === 'admin';
+                    $isSelf = $row['username'] === $adminUsername;
+                    $isLastAdmin = $isAdminRow && $status === USER_STATUS_APPROVED && $approvedAdmins <= 1;
                 ?>
                     <tr>
                         <td>
                             <div class="user-name"><?php echo htmlspecialchars($displayName, ENT_QUOTES); ?></div>
-                            <div class="user-sub">@<?php echo htmlspecialchars($row['username'], ENT_QUOTES); ?></div>
+                            <div class="user-sub">@<?php echo htmlspecialchars($row['username'], ENT_QUOTES); ?><?php echo $isSelf ? ' · you' : ''; ?></div>
                         </td>
-                        <td><?php echo htmlspecialchars($row['office'] !== '' ? $row['office'] : '—', ENT_QUOTES); ?></td>
+                        <td>
+                            <span class="chip <?php echo $isAdminRow ? 'chip-purple' : 'chip-steel'; ?>">
+                                <?php echo $isAdminRow ? 'Administrator' : 'Department'; ?>
+                            </span>
+                        </td>
+                        <td><?php echo htmlspecialchars($row['office'] !== '' && !$isAdminRow ? $row['office'] : ($isAdminRow ? 'All departments' : '—'), ENT_QUOTES); ?></td>
                         <td>
                             <div><?php echo htmlspecialchars($row['email'] !== '' ? $row['email'] : '—', ENT_QUOTES); ?></div>
                             <div class="user-sub"><?php echo htmlspecialchars(trim((string) $row['phone']) !== '' ? $row['phone'] : 'No phone', ENT_QUOTES); ?></div>
@@ -213,7 +235,11 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
                                     </form>
                                 <?php endif; ?>
 
-                                <?php if($status === USER_STATUS_PENDING): ?>
+                                <?php if($isSelf): ?>
+                                    <span class="user-sub">Your own account</span>
+                                <?php elseif($isLastAdmin): ?>
+                                    <span class="user-sub">Last administrator</span>
+                                <?php elseif($status === USER_STATUS_PENDING): ?>
                                     <form method="POST" onsubmit="return mu_reject(this);">
                                         <input type="hidden" name="user_id" value="<?php echo (int) $row['id']; ?>">
                                         <input type="hidden" name="decision" value="<?php echo USER_STATUS_REJECTED; ?>">

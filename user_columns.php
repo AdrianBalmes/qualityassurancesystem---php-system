@@ -62,3 +62,46 @@ function user_login_block_reason($user){
     }
     return '';
 }
+
+/** How many administrators can currently sign in. */
+function approved_admin_count($conn){
+    $result = mysqli_query($conn, "SELECT COUNT(*) AS total FROM users WHERE role = 'admin' AND status = '" . USER_STATUS_APPROVED . "'");
+    $row = $result ? $result->fetch_assoc() : null;
+    return $row ? (int) $row['total'] : 0;
+}
+
+/**
+ * Re-check the signed-in account against the database on every page load, and
+ * end the session if it is no longer approved.
+ *
+ * Without this, revoking someone only takes effect at their next sign-in --
+ * an admin whose access was withdrawn keeps working until they log out.
+ */
+function enforce_active_account($conn){
+    $isAdmin = isset($_SESSION['admin_username']);
+    $userId = (int) ($isAdmin ? ($_SESSION['admin_user_id'] ?? 0) : ($_SESSION['office_user_id'] ?? 0));
+
+    if(!$isAdmin && !isset($_SESSION['office_username'])){
+        return;  // Nobody is signed in; the page's own guard handles that.
+    }
+    if($userId <= 0){
+        return;
+    }
+
+    $stmt = $conn->prepare("SELECT status, role FROM users WHERE id = ? LIMIT 1");
+    $stmt->bind_param("i", $userId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+
+    $stillValid = $row
+        && user_login_block_reason($row) === ''
+        && (($row['role'] === 'admin') === $isAdmin);
+
+    if($stillValid){
+        return;
+    }
+
+    session_destroy();
+    header("Location: " . ($isAdmin ? "admin_login.php" : "index.php") . "?revoked=1");
+    exit();
+}

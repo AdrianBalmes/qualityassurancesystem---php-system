@@ -2,6 +2,7 @@
 session_start();
 require_once __DIR__ . "/database.php";
 require_once __DIR__ . "/profile_columns.php";
+require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/audit_log_helper.php";
 
 if(isset($_SESSION['office_logins']) && is_array($_SESSION['office_logins'])){
@@ -32,12 +33,14 @@ $office = $_SESSION['office_name'];
 $officeDashboardUrl = "office_dashboard.php?office=" . urlencode($office);
 
 ensure_profile_columns($conn);
+ensure_user_account_columns($conn);
+enforce_active_account($conn);
 
 $message = "";
 $error = "";
 
 $officeUserId = (int) ($_SESSION['office_user_id'] ?? 0);
-$stmt = $conn->prepare("SELECT id, username, password, email, phone, role, office, profile_photo, created_at, last_login FROM users WHERE id = ? AND role <> 'admin' LIMIT 1");
+$stmt = $conn->prepare("SELECT id, username, password, email, phone, role, office, full_name, profile_photo, created_at, last_login FROM users WHERE id = ? AND role <> 'admin' LIMIT 1");
 $stmt->bind_param("i", $officeUserId);
 $stmt->execute();
 $user = $stmt->get_result()->fetch_assoc();
@@ -54,6 +57,7 @@ if(!is_dir($avatarDir)){
 }
 
 if(isset($_POST['save_profile'])){
+    $newFullName = trim($_POST['full_name'] ?? '');
     $newUsername = trim($_POST['username']);
     $newEmail = trim($_POST['email']);
     $newPhone = trim($_POST['phone']);
@@ -106,16 +110,17 @@ if(isset($_POST['save_profile'])){
             if($error === ""){
                 if($newPassword !== ""){
                     $hashedPassword = password_hash($newPassword, PASSWORD_DEFAULT);
-                    $update = $conn->prepare("UPDATE users SET username = ?, email = ?, phone = ?, password = ?, profile_photo = ? WHERE id = ?");
-                    $update->bind_param("sssssi", $newUsername, $newEmail, $newPhone, $hashedPassword, $newPhotoName, $user['id']);
+                    $update = $conn->prepare("UPDATE users SET full_name = ?, username = ?, email = ?, phone = ?, password = ?, profile_photo = ? WHERE id = ?");
+                    $update->bind_param("ssssssi", $newFullName, $newUsername, $newEmail, $newPhone, $hashedPassword, $newPhotoName, $user['id']);
                 } else {
-                    $update = $conn->prepare("UPDATE users SET username = ?, email = ?, phone = ?, profile_photo = ? WHERE id = ?");
-                    $update->bind_param("ssssi", $newUsername, $newEmail, $newPhone, $newPhotoName, $user['id']);
+                    $update = $conn->prepare("UPDATE users SET full_name = ?, username = ?, email = ?, phone = ?, profile_photo = ? WHERE id = ?");
+                    $update->bind_param("sssssi", $newFullName, $newUsername, $newEmail, $newPhone, $newPhotoName, $user['id']);
                 }
 
                 if($update->execute()){
                     $changedFields = [];
-                    if($newUsername !== $user['username']){ $changedFields[] = "username"; }
+                    if($newFullName !== ($user["full_name"] ?? "")){ $changedFields[] = "full name"; }
+                    if($newUsername !== $user["username"]){ $changedFields[] = "username"; }
                     if($newEmail !== $user['email']){ $changedFields[] = "email"; }
                     if($newPhone !== $user['phone']){ $changedFields[] = "phone"; }
                     if($newPassword !== ""){ $changedFields[] = "password"; }
@@ -131,7 +136,7 @@ if(isset($_POST['save_profile'])){
 
                     log_audit_event($conn, $newUsername, 'office', $office, 'profile_updated', 'user', $user['id'], "{$office} user \"{$newUsername}\" updated their profile ({$changeSummary})");
 
-                    $stmt = $conn->prepare("SELECT id, username, password, email, phone, role, office, profile_photo, created_at, last_login FROM users WHERE id = ? LIMIT 1");
+                    $stmt = $conn->prepare("SELECT id, username, password, email, phone, role, office, full_name, profile_photo, created_at, last_login FROM users WHERE id = ? LIMIT 1");
                     $stmt->bind_param("i", $user['id']);
                     $stmt->execute();
                     $user = $stmt->get_result()->fetch_assoc();
@@ -195,7 +200,8 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
                         <span class="avatar-edit-badge" id="avatarEditBadge" title="Change photo"><i class="bi bi-camera-fill"></i></span>
                     </div>
                     <div>
-                        <h2 class="user-name"><?php echo htmlspecialchars($user['username'], ENT_QUOTES); ?></h2>
+                        <h2 class="user-name"><?php echo htmlspecialchars(trim($user['full_name']) !== '' ? $user['full_name'] : $user['username'], ENT_QUOTES); ?></h2>
+                        <?php if(trim($user['full_name']) !== ''): ?><div class="muted-copy">@<?php echo htmlspecialchars($user['username'], ENT_QUOTES); ?></div><?php endif; ?>
                         <span class="role-badge"><i class="bi bi-person-badge"></i> <?php echo htmlspecialchars($officeLabel, ENT_QUOTES); ?></span>
                     </div>
                 </div>
@@ -240,6 +246,10 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
                     <h3 class="section-title"><i class="bi bi-person-lines-fill"></i> Account Details</h3>
                     <div class="row g-3">
                         <div class="col-md-6">
+                            <label class="form-label">Full Name</label>
+                            <input type="text" name="full_name" class="form-control" maxlength="120" value="<?php echo htmlspecialchars($user['full_name'] ?? '', ENT_QUOTES); ?>" placeholder="e.g. Juan dela Cruz">
+                        </div>
+                        <div class="col-md-6 mb-3">
                             <label class="form-label">Username</label>
                             <input type="text" name="username" class="form-control" value="<?php echo htmlspecialchars($user['username'], ENT_QUOTES); ?>" required>
                         </div>

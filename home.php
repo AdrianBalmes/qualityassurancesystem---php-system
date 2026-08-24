@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . "/database.php";
+require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/content_helper.php";
 require_once __DIR__ . "/audit_classification.php";
 require_once __DIR__ . "/office_rec_render.php";
@@ -13,6 +14,8 @@ if(!isset($_SESSION['admin_username']) || $_SESSION['admin_role'] != "admin"){
     exit();
 }
 
+ensure_user_account_columns($conn);
+enforce_active_account($conn);
 ensure_review_columns($conn);
 
 $siteContent = sc_load($conn);

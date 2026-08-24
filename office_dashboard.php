@@ -7,6 +7,7 @@ require_once __DIR__ . "/office_directory.php";
 require_once __DIR__ . "/recommendation_status.php";
 require_once __DIR__ . "/audit_log_helper.php";
 require_once __DIR__ . "/review_columns.php";
+require_once __DIR__ . "/onedrive_sync.php";
 
 ensure_review_columns($conn);
 
@@ -44,10 +45,11 @@ if(isset($_POST['submit_compliance'])){
     $recId = intval($_POST['recommendation_id'] ?? 0);
     $complianceResponse = trim($_POST['compliance_response'] ?? '');
 
-    $ownStmt = $conn->prepare("SELECT id FROM audit_recommendations WHERE id = ? AND office = ? LIMIT 1");
+    $ownStmt = $conn->prepare("SELECT id, year FROM audit_recommendations WHERE id = ? AND office = ? LIMIT 1");
     $ownStmt->bind_param("is", $recId, $office);
     $ownStmt->execute();
-    $ownsRow = $ownStmt->get_result()->num_rows > 0;
+    $ownedRec = $ownStmt->get_result()->fetch_assoc();
+    $ownsRow = $ownedRec !== null;
 
     if(!$ownsRow){
         echo "<script>alert('That recommendation does not belong to your office.'); window.location=" . json_encode($officeDashboardUrl) . ";</script>";
@@ -79,19 +81,20 @@ if(isset($_POST['submit_compliance'])){
             $docStmt = $conn->prepare("INSERT INTO recommendation_documents (recommendation_id, office, file_name, original_name) VALUES (?,?,?,?)");
             $docStmt->bind_param("isss", $recId, $office, $file_name, $original_name);
             $docStmt->execute();
+            $documentId = $conn->insert_id;
 
-            log_audit_event($conn, $_SESSION['office_username'], 'office', $office, 'document_uploaded', 'document', $conn->insert_id, "{$office} uploaded supporting document \"{$original_name}\" for recommendation #{$recId}");
+            log_audit_event($conn, $_SESSION['office_username'], 'office', $office, 'document_uploaded', 'document', $documentId, "{$office} uploaded supporting document \"{$original_name}\" for recommendation #{$recId}");
+
+            // Mirror the file into the shared OneDrive repository. This never
+            // throws -- if OneDrive is unreachable the file is queued and
+            // onedrive_worker.php retries it later.
+            od_queue_and_sync($conn, 'recommendation_documents', $documentId, $office, $file_name, $original_name, $ownedRec['year'] ?? '');
         }
     }
 
     echo "<script>alert('Compliance update submitted successfully.'); window.location=" . json_encode($officeDashboardUrl . "#recommendations") . ";</script>";
     exit();
 }
-
-$feedbackStmt = $conn->prepare("SELECT f.document_id, f.message, f.date_sent, d.title, d.file_name, d.file_link FROM feedback f LEFT JOIN documents d ON f.document_id = d.id WHERE f.office = ? ORDER BY f.date_sent DESC LIMIT 10");
-$feedbackStmt->bind_param("s", $office);
-$feedbackStmt->execute();
-$feedbackMessages = $feedbackStmt->get_result();
 
 $recStmt = $conn->prepare("SELECT * FROM audit_recommendations WHERE office = ? ORDER BY year DESC, id DESC");
 $recStmt->bind_param("s", $office);
@@ -174,6 +177,13 @@ body{margin:0;background:#f1f5fb;color:#344156;font-family:Arial,Helvetica,sans-
 .brand-icon{width:38px;height:38px;border-radius:8px;background:#fff;color:#316fc4;display:grid;place-items:center}
 .nav-links{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
 .nav-links a,.nav-links button{color:#eef4ff;text-decoration:none;font-weight:700;background:none;border:0;padding:0}
+.nav-dropdown-toggle{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+/* .nav-links a above would paint these near-white on the white menu. */
+.nav-links .dropdown-menu{padding:6px;border:1px solid #dbe3ef;border-radius:8px;box-shadow:0 8px 22px rgba(44,74,119,.18);min-width:200px}
+.nav-links .dropdown-item{color:#344156;font-weight:700;font-size:13.5px;border-radius:5px;padding:9px 12px;display:flex;align-items:center;gap:9px}
+.nav-links .dropdown-item:hover,.nav-links .dropdown-item:focus{background:#eef4ff;color:#2e67b8}
+.nav-links .dropdown-item.signout{color:#c23b36}
+.nav-links .dropdown-item.signout:hover,.nav-links .dropdown-item.signout:focus{background:#ffe1dc;color:#a5302b}
 .page{max-width:1680px;margin:26px auto 42px;padding:0 clamp(14px,2vw,32px)}
 .page-head{display:flex;align-items:end;justify-content:space-between;gap:16px;margin-bottom:18px;flex-wrap:wrap}
 .page-title{margin:0;font-size:26px;font-weight:800}
@@ -194,11 +204,6 @@ body{margin:0;background:#f1f5fb;color:#344156;font-family:Arial,Helvetica,sans-
 .icon-compliance{background:#7a5fd6}
 .charts-grid{display:grid;grid-template-columns:minmax(320px,1fr) minmax(420px,1.4fr);gap:16px;margin-bottom:20px}
 .chart-box{height:260px;position:relative}
-.feedback-list{display:grid;gap:10px;max-height:420px;overflow:auto}
-.feedback-item{border:1px solid #dbe3ef;background:#f8fbff;border-radius:7px;padding:12px}
-.feedback-title{font-weight:800;color:#344156}
-.feedback-date{color:#66758d;font-size:12px;font-weight:800}
-.feedback-body{margin:7px 0 0;color:#344156;font-size:14px;line-height:1.45;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere}
 .form-label{font-weight:800}
 .table-wrap{overflow-x:auto}
 .dashboard-table{min-width:650px}
@@ -246,11 +251,16 @@ img,canvas,svg{max-width:100%}
         <div class="brand"><span class="brand-icon"><i class="bi bi-file-earmark-text-fill"></i></span><?php sc_span($siteContent, 'office.brand', 'SBC Quality Assurance Electronic Documentation'); ?></div>
         <nav class="nav-links">
             <a href="<?php echo htmlspecialchars($officeDashboardUrl, ENT_QUOTES); ?>">Dashboard</a>
-            <a href="index.php">Login Office</a>
             <a href="repository.php">Repository</a>
             <button type="button" data-bs-toggle="modal" data-bs-target="#allDocumentsModal"><i class="bi bi-folder2-open"></i> My Documents</button>
-            <button type="button" data-bs-toggle="modal" data-bs-target="#feedbackModal">QA Feedback</button>
-            <a href="office_profile.php"><i class="bi bi-person-circle"></i> Profile</a>
+            <div class="dropdown">
+                <button type="button" class="nav-dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-person-circle"></i> Profile <i class="bi bi-chevron-down" style="font-size:11px"></i></button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li><a class="dropdown-item" href="office_profile.php?office=<?php echo urlencode($office); ?>"><i class="bi bi-person-circle"></i> Office Profile</a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item signout" href="logout.php"><i class="bi bi-box-arrow-right"></i> Sign Out</a></li>
+                </ul>
+            </div>
         </nav>
     </div>
 </header>
@@ -434,40 +444,6 @@ img,canvas,svg{max-width:100%}
                             ?>
                         </tbody>
                     </table>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="modal fade" id="feedbackModal" tabindex="-1" aria-labelledby="feedbackModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="feedbackModalLabel">QA Feedback Messages</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <div class="feedback-list">
-                    <?php
-                    if($feedbackMessages && mysqli_num_rows($feedbackMessages) > 0){
-                        while($fb = mysqli_fetch_assoc($feedbackMessages)){
-                            $fbTitle = htmlspecialchars($fb['title'] ?? 'Document removed', ENT_QUOTES);
-                            $fbFileName = htmlspecialchars($fb['file_name'] ?? 'N/A', ENT_QUOTES);
-                            $fbMessage = htmlspecialchars($fb['message'], ENT_QUOTES);
-                            $fbDate = htmlspecialchars($fb['date_sent'], ENT_QUOTES);
-                            $viewUrl = !empty($fb['document_id']) ? "view_document.php?id=" . (int) $fb['document_id'] . "&office=" . urlencode($office) : "";
-                            $safeViewUrl = htmlspecialchars($viewUrl, ENT_QUOTES);
-                            echo "<article class='feedback-item'><div class='feedback-title'>{$fbTitle}</div><div class='muted-copy'>{$fbFileName}</div><div class='feedback-date'>{$fbDate}</div><p class='feedback-body'>{$fbMessage}</p>";
-                            if($safeViewUrl !== ""){
-                                echo "<a class='link-strong d-inline-block mt-2' href='{$safeViewUrl}' target='_blank'>Open Document</a>";
-                            }
-                            echo "</article>";
-                        }
-                    } else {
-                        echo "<div class='empty-state'>No QA feedback messages yet</div>";
-                    }
-                    ?>
                 </div>
             </div>
         </div>

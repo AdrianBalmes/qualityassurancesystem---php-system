@@ -24,23 +24,18 @@ if($selectedOffice !== '' && audit_type_for_office($selectedOffice) !== $selecte
     $selectedOffice = '';
 }
 
-if($selectedOffice === ''){
-    $html = render_select_office_placeholder();
-    $count = 0;
-} else {
-    $recommendations = fetch_office_recommendations($conn, $selectedOffice, $selectedAudit);
-    $recIds = array_map(function($row){ return (int) $row['id']; }, $recommendations);
-    $docsByRecommendation = fetch_recommendation_documents_map($conn, $recIds);
-    $rendered = render_office_recommendation_rows($recommendations, $selectedOffice, $selectedAudit, $docsByRecommendation);
-    $html = $rendered['html'];
-    $count = $rendered['count'];
-}
+// An empty office is the "All Offices" tab, which lists every office for this
+// audit type rather than showing a placeholder.
+$recommendations = fetch_office_recommendations($conn, $selectedOffice, $selectedAudit);
+$recIds = array_map(function($row){ return (int) $row['id']; }, $recommendations);
+$docsByRecommendation = fetch_recommendation_documents_map($conn, $recIds);
+$rendered = render_office_recommendation_rows($recommendations, $selectedOffice, $selectedAudit, $docsByRecommendation);
 
 echo json_encode([
     'ok' => true,
     'office' => $selectedOffice,
     'audit' => $selectedAudit,
-    'title' => $selectedOffice . ' Recommendations',
-    'html' => $html,
-    'count' => $count,
+    'title' => office_recommendations_title($selectedOffice),
+    'html' => $rendered['html'],
+    'count' => $rendered['count'],
 ]);

@@ -61,7 +61,9 @@ foreach($officeNamesForAudit as $officeName){
     $recOfficeCounts[] = $recCountsByOffice[$officeName] ?? 0;
 }
 
-$auditRecommendations = $selectedOffice !== '' ? fetch_office_recommendations($conn, $selectedOffice, $selectedAudit) : [];
+// An empty $selectedOffice is the "All Offices" tab; the fetch helper returns
+// every office for this audit type in that case.
+$auditRecommendations = fetch_office_recommendations($conn, $selectedOffice, $selectedAudit);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -77,7 +79,7 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
 </style>
 </head>
 <body>
-<header class="topbar"><div class="nav-wrap"><div class="brand"><span class="brand-icon"><i class="bi bi-file-earmark-text-fill"></i></span><?php sc_span($siteContent, 'home.brand', 'SBC Quality Assurance Electronic Documentation Dashboard'); ?></div><nav class="nav-links"><a href="home.php">Home</a><a href="repository.php">Repository</a><a href="create_feedback.php">Feedback</a><a href="activity_log.php">Activity Log</a><a href="admin_profile.php"><i class="bi bi-person-circle"></i> Profile</a></nav></div></header>
+<header class="topbar"><div class="nav-wrap"><div class="brand"><span class="brand-icon"><i class="bi bi-file-earmark-text-fill"></i></span><?php sc_span($siteContent, 'home.brand', 'SBC Quality Assurance Electronic Documentation Dashboard'); ?></div><nav class="nav-links"><a href="home.php">Home</a><a href="repository.php">Repository</a><a href="activity_log.php">Activity Log</a><a href="admin_profile.php"><i class="bi bi-person-circle"></i> Profile</a></nav></div></header>
 <main class="dashboard">
 <section class="panel panel-pad" id="office-rec-chart" style="margin-bottom:18px">
     <h3 style="margin:0 0 8px;font-size:15px;font-weight:800;color:#344156"><?php sc_span($siteContent, 'home.audit.chart_title', 'Recommendations Submitted by Office'); ?></h3>
@@ -119,7 +121,7 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
         <div class="stat-box stat-red">Not Submitted: <strong><?php echo $auditNotSubmittedCount; ?></strong></div>
     </div>
     <div class="grid-head">
-        <h3 class="panel-title" id="auditRecTitle" style="font-size:15px;border-bottom:0;padding-bottom:0;margin-bottom:0"><?php echo $selectedOffice === '' ? 'Select an office below' : htmlspecialchars($selectedOffice, ENT_QUOTES) . ' Recommendations'; ?></h3>
+        <h3 class="panel-title" id="auditRecTitle" style="font-size:15px;border-bottom:0;padding-bottom:0;margin-bottom:0"><?php echo htmlspecialchars(office_recommendations_title($selectedOffice), ENT_QUOTES); ?></h3>
         <button type="button" id="addRowBtn" class="add-row-btn" <?php echo $selectedOffice === '' ? 'style="display:none"' : ''; ?>><i class="bi bi-plus-lg"></i> Add Row</button>
     </div>
     <div class="grid-wrap">
@@ -137,14 +139,10 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
             </thead>
             <tbody id="auditRecTbody">
                 <?php
-                if($selectedOffice === ''){
-                    echo render_select_office_placeholder();
-                } else {
-                    $auditRecIds = array_map(function($row){ return (int) $row['id']; }, $auditRecommendations);
-                    $auditDocsByRecommendation = fetch_recommendation_documents_map($conn, $auditRecIds);
-                    $auditRecRendered = render_office_recommendation_rows($auditRecommendations, $selectedOffice, $selectedAudit, $auditDocsByRecommendation);
-                    echo $auditRecRendered['html'];
-                }
+                $auditRecIds = array_map(function($row){ return (int) $row['id']; }, $auditRecommendations);
+                $auditDocsByRecommendation = fetch_recommendation_documents_map($conn, $auditRecIds);
+                $auditRecRendered = render_office_recommendation_rows($auditRecommendations, $selectedOffice, $selectedAudit, $auditDocsByRecommendation);
+                echo $auditRecRendered['html'];
                 ?>
             </tbody>
         </table>
@@ -596,7 +594,9 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
                 if(!data.ok){ return; }
                 currentOffice = office;
                 auditTbody.innerHTML = data.html;
-                auditTitle.textContent = office === '' ? 'Select an office below' : data.title;
+                auditTitle.textContent = data.title;
+                // Add Row stays hidden on "All Offices" -- a new recommendation
+                // has to belong to one office, so there is nothing to file it under.
                 if(addRowBtn){ addRowBtn.style.display = office === '' ? 'none' : ''; }
                 var newUrl = 'home.php?audit=' + encodeURIComponent(selectedAudit) + (office !== '' ? '&office=' + encodeURIComponent(office) : '') + '#audit-recommendations';
                 window.history.replaceState(null, '', newUrl);

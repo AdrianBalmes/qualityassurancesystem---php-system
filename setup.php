@@ -44,6 +44,14 @@ ensure_column($conn, 'users', 'profile_photo', "varchar(255) DEFAULT ''", $chang
 ensure_column($conn, 'users', 'created_at',    "datetime DEFAULT CURRENT_TIMESTAMP", $changes);
 ensure_column($conn, 'users', 'last_login',    "datetime DEFAULT NULL", $changes);
 
+// user_columns.php -- individual accounts and the registration approval queue.
+// Existing rows default to approved so this feature cannot lock anyone out.
+ensure_column($conn, 'users', 'full_name',     "varchar(120) NOT NULL DEFAULT ''", $changes);
+ensure_column($conn, 'users', 'status',        "varchar(20) NOT NULL DEFAULT 'approved'", $changes);
+ensure_column($conn, 'users', 'reviewed_by',   "varchar(50) DEFAULT NULL", $changes);
+ensure_column($conn, 'users', 'reviewed_at',   "datetime DEFAULT NULL", $changes);
+ensure_column($conn, 'users', 'review_reason', "text DEFAULT NULL", $changes);
+
 // review_columns.php. TEXT columns cannot carry a DEFAULT on MySQL 8, though
 // MariaDB permits it -- so review_remarks is added without one.
 ensure_column($conn, 'audit_recommendations', 'review_remarks', "text", $changes);

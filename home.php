@@ -6,6 +6,7 @@ require_once __DIR__ . "/audit_classification.php";
 require_once __DIR__ . "/office_rec_render.php";
 require_once __DIR__ . "/office_directory.php";
 require_once __DIR__ . "/review_columns.php";
+require_once __DIR__ . "/nav_dropdown.php";
 
 if(!isset($_SESSION['admin_username']) || $_SESSION['admin_role'] != "admin"){
     header("Location: admin_login.php");
@@ -79,7 +80,7 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
 </style>
 </head>
 <body>
-<header class="topbar"><div class="nav-wrap"><div class="brand"><span class="brand-icon"><i class="bi bi-file-earmark-text-fill"></i></span><?php sc_span($siteContent, 'home.brand', 'SBC Quality Assurance Electronic Documentation Dashboard'); ?></div><nav class="nav-links"><a href="home.php">Home</a><a href="repository.php">Repository</a><a href="activity_log.php">Activity Log</a><a href="admin_profile.php"><i class="bi bi-person-circle"></i> Profile</a></nav></div></header>
+<header class="topbar"><div class="nav-wrap"><div class="brand"><span class="brand-icon"><i class="bi bi-file-earmark-text-fill"></i></span><?php sc_span($siteContent, 'home.brand', 'SBC Quality Assurance Electronic Documentation Dashboard'); ?></div><nav class="nav-links"><a href="home.php">Home</a><a href="repository.php">Repository</a><a href="activity_log.php">Activity Log</a><?php render_profile_dropdown('admin_profile.php', 'Admin Profile'); ?></nav></div></header>
 <main class="dashboard">
 <section class="panel panel-pad" id="office-rec-chart" style="margin-bottom:18px">
     <h3 style="margin:0 0 8px;font-size:15px;font-weight:800;color:#344156"><?php sc_span($siteContent, 'home.audit.chart_title', 'Recommendations Submitted by Office'); ?></h3>

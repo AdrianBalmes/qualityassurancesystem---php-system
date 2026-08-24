@@ -2,6 +2,7 @@
 session_start();
 require_once __DIR__ . "/database.php";
 require_once __DIR__ . "/audit_log_helper.php";
+require_once __DIR__ . "/nav_dropdown.php";
 
 if(!isset($_SESSION['admin_username']) && !isset($_SESSION['office_username'])){
     header("Location: index.php");
@@ -133,7 +134,7 @@ body{margin:0;background:#f4f6f9;color:#26354b;font-family:-apple-system,BlinkMa
         <nav class="nav-links">
             <a href="<?php echo $isAdmin ? 'home.php' : 'office_dashboard.php'; ?>">Dashboard</a>
             <a href="repository.php">Repository</a>
-            <a href="<?php echo $isAdmin ? 'admin_profile.php' : 'office_profile.php'; ?>"><i class="bi bi-person-circle"></i> Profile</a>
+            <?php render_profile_dropdown($isAdmin ? 'admin_profile.php' : 'office_profile.php', $isAdmin ? 'Admin Profile' : 'Office Profile'); ?>
         </nav>
     </div>
 </header>

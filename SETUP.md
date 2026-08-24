@@ -111,39 +111,16 @@ and user accounts existed at that moment.
 
 ## Branch workflow
 
-`main` is the working version. Build features on their own branch and merge
-only when they are ready.
+`main` is the working version. Build features on their own branch and merge only
+when they are ready:
 
 ```bash
-git checkout main
+git switch main
 git pull
-git checkout -b feature/whatever-you-are-building
+git switch -c feature/whatever-you-are-building
 # ... work, commit ...
 git push -u origin feature/whatever-you-are-building
 ```
 
-`-u` is only needed the first time you push a new branch; `git push` alone
-works afterwards.
-
-**Merging into main** is best done as a Pull Request on GitHub — it gives you a
-diff to review and a record of what landed. From the repo page, GitHub offers a
-"Compare & pull request" button after you push a branch.
-
-Or locally:
-
-```bash
-git checkout main
-git pull
-git merge feature/whatever-you-are-building
-git push
-```
-
-**Don't let a branch sit for weeks.** `feature/audit-rec-file-upload` fell three
-weeks behind and now conflicts with `main` in five files, including one that
-`main` deleted. Merging `main` into your branch regularly keeps that from
-happening:
-
-```bash
-git checkout feature/whatever-you-are-building
-git merge main
-```
+See **[GIT_GUIDE.md](GIT_GUIDE.md)** for branching, switching, pushing, pull
+requests, and what to do when git complains.

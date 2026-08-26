@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . "/database.php";
+require_once __DIR__ . "/page_background.php";
 require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/audit_log_helper.php";
 require_once __DIR__ . "/nav_dropdown.php";
@@ -132,6 +133,7 @@ body{margin:0;background:#f4f6f9;color:#26354b;font-family:-apple-system,BlinkMa
 </style>
 </head>
 <body>
+<?php render_page_background(); ?>
 <header class="topbar">
     <div class="nav-wrap">
         <div class="brand"><span class="brand-icon"><i class="bi bi-folder2-open"></i></span><span>Document Repository</span></div>

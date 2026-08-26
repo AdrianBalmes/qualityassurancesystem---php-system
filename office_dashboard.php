@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . "/database.php";
+require_once __DIR__ . "/page_background.php";
 require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/content_helper.php";
 require_once __DIR__ . "/audit_classification.php";
@@ -250,6 +251,7 @@ img,canvas,svg{max-width:100%}
 </style>
 </head>
 <body>
+<?php render_page_background(); ?>
 <header class="topbar">
     <div class="nav-wrap">
         <div class="brand"><span class="brand-icon"><i class="bi bi-file-earmark-text-fill"></i></span><?php sc_span($siteContent, 'office.brand', 'SBC Quality Assurance Electronic Documentation'); ?></div>

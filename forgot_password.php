@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . "/database.php";
+require_once __DIR__ . "/page_background.php";
 require_once __DIR__ . "/sms_helper.php";
 
 if(isset($_SESSION['admin_username']) && $_SESSION['admin_role'] === 'admin'){
@@ -75,6 +76,7 @@ if(isset($_POST['request_reset'])){
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 <body class="bg-light">
+<?php render_page_background("auth"); ?>
 <div class="container d-flex justify-content-center align-items-center vh-100">
     <div class="card shadow p-4" style="width: 420px;">
         <h4 class="text-center mb-3">Forgot Password</h4>

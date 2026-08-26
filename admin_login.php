@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . "/database.php";
+require_once __DIR__ . "/page_background.php";
 require_once __DIR__ . "/profile_columns.php";
 require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/audit_log_helper.php";
@@ -83,6 +84,7 @@ if(isset($_POST['login'])){
     </style>
 </head>
 <body>
+<?php render_page_background("auth"); ?>
 <div class="container d-flex justify-content-center">
     <div class="card login-card" style="width: 400px;">
         <div class="brand-logo"><i class="bi bi-shield-lock-fill"></i></div>

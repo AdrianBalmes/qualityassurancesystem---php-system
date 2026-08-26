@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . "/database.php";
+require_once __DIR__ . "/page_background.php";
 require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/content_helper.php";
 require_once __DIR__ . "/office_directory.php";
@@ -189,6 +190,7 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
 </style>
 </head>
 <body>
+<?php render_page_background(); ?>
 <header class="topbar"><div class="nav-wrap"><div class="brand"><span class="brand-icon"><i class="bi bi-file-earmark-text-fill"></i></span><?php sc_span($siteContent, 'home.brand', 'SBC Quality Assurance Electronic Documentation Dashboard'); ?></div><nav class="nav-links"><a href="home.php">Home</a><a href="repository.php">Repository</a><a href="activity_log.php">Activity Log</a><a href="manage_users.php">Users</a><?php render_profile_dropdown('admin_profile.php', 'Admin Profile'); ?></nav></div></header>
 <main class="dashboard">
 <section class="panel panel-pad">

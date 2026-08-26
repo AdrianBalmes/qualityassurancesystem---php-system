@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . "/database.php";
+require_once __DIR__ . "/page_background.php";
 require_once __DIR__ . "/profile_columns.php";
 require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/office_directory.php";
@@ -103,6 +104,7 @@ body{background:linear-gradient(135deg,#f6f8fb 0%,#e9effd 100%);font-family:'Int
 </style>
 </head>
 <body class="bg-light">
+<?php render_page_background("auth"); ?>
 <div class="container d-flex justify-content-center">
     <div class="card register-card" style="width: min(100%, 620px);">
         <div class="brand-logo"><i class="bi bi-person-plus-fill"></i></div>

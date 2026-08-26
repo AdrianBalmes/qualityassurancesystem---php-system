@@ -176,13 +176,13 @@ Conflicts caught early are small. Conflicts caught after a month are a project.
 
 ## When something looks wrong
 
-| Message | Meaning | Fix |
-|---|---|---|
-| `Your local changes would be overwritten` | uncommitted work blocks the switch | commit first |
-| `Updates were rejected` | GitHub has commits you do not | `git pull`, then push |
-| `no upstream branch` | first push of a new branch | `git push -u origin <branch>` |
-| `detached HEAD` | you are on a commit, not a branch | `git switch main` |
-| `Already up to date` on merge | nothing to bring in | nothing wrong |
+| Message                                     | Meaning                            | Fix                             |
+| ------------------------------------------- | ---------------------------------- | ------------------------------- |
+| `Your local changes would be overwritten` | uncommitted work blocks the switch | commit first                    |
+| `Updates were rejected`                   | GitHub has commits you do not      | `git pull`, then push         |
+| `no upstream branch`                      | first push of a new branch         | `git push -u origin <branch>` |
+| `detached HEAD`                           | you are on a commit, not a branch  | `git switch main`             |
+| `Already up to date` on merge             | nothing to bring in                | nothing wrong                   |
 
 ### The safety net
 
@@ -196,9 +196,9 @@ run `git reflog` before anything drastic.
 
 ## Things that do not travel through git
 
-| Not in git | How to get it on the other machine |
-|---|---|
-| `.env` | `cp .env.example .env`, then fill in |
+| Not in git         | How to get it on the other machine                |
+| ------------------ | ------------------------------------------------- |
+| `.env`           | `cp .env.example .env`, then fill in            |
 | Your database rows | `mysqldump` / import — see [SETUP.md](SETUP.md) |
 
 `.env` is gitignored on purpose. Never commit real credentials.

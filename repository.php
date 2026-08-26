@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . "/database.php";
+require_once __DIR__ . "/page_background.php";
 require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/audit_log_helper.php";
 require_once __DIR__ . "/nav_dropdown.php";
@@ -79,7 +80,7 @@ body{margin:0;background:#f4f6f9;color:#26354b;font-family:-apple-system,BlinkMa
 .topbar{background:linear-gradient(135deg,#316fc4,#2459a6);color:#fff;box-shadow:0 8px 20px rgba(44,93,165,.2)}
 .nav-wrap{max-width:1240px;margin:auto;min-height:70px;padding:0 20px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
 .brand{display:flex;align-items:center;gap:12px;font-size:19px;font-weight:800}
-.brand-icon{width:36px;height:36px;border-radius:8px;background:#fff;color:#316fc4;display:grid;place-items:center}
+.brand-icon{width:64px;height:64px;display:grid;place-items:center;flex-shrink:0}
 .nav-links{display:flex;gap:18px;flex-wrap:wrap}
 .nav-links a{color:#eef4ff;text-decoration:none;font-weight:700;font-size:14px}
 .nav-links a:hover{text-decoration:underline}
@@ -132,9 +133,10 @@ body{margin:0;background:#f4f6f9;color:#26354b;font-family:-apple-system,BlinkMa
 </style>
 </head>
 <body>
+<?php render_page_background(); ?>
 <header class="topbar">
     <div class="nav-wrap">
-        <div class="brand"><span class="brand-icon"><i class="bi bi-folder2-open"></i></span><span>Document Repository</span></div>
+        <div class="brand"><span class="brand-icon"><img src="assets/sbc-logo.png" alt="St. Bridget College" style="width:100%;height:100%;object-fit:contain"></span><span>Document Repository</span></div>
         <nav class="nav-links">
             <a href="<?php echo $isAdmin ? 'home.php' : 'office_dashboard.php'; ?>">Dashboard</a>
             <a href="repository.php">Repository</a>

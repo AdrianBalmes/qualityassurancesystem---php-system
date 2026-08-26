@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . "/database.php";
+require_once __DIR__ . "/page_background.php";
 require_once __DIR__ . "/profile_columns.php";
 require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/audit_log_helper.php";
@@ -95,36 +96,52 @@ if(isset($_POST['login'])){
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     <style>
         body {
-            background: linear-gradient(135deg, #f6f8fb 0%, #e9effd 100%);
+            background: #0f172a;
             font-family: 'Inter', sans-serif;
             min-height: 100vh;
             display: flex;
             align-items: center;
             padding: 24px 0;
         }
+        /* Frosted glass: the banner reads through the card, and the blur
+           keeps whatever is behind it from making the text unreadable. */
         .login-card {
-            border: none;
-            border-radius: 8px;
-            box-shadow: 0 10px 25px rgba(44, 74, 119, 0.1);
-            padding: 28px;
-            background: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            border-radius: 16px;
+            padding: 40px;
+            background: rgba(15, 23, 42, 0.45);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
         }
+        /* Card text was dark for a white card; it sits on glass now. */
+        .login-card h4 { color: #fff; }
+        .login-card .text-muted { color: rgba(255, 255, 255, 0.72) !important; }
+        .login-card .form-label { color: #fff; }
+        .login-card a { color: #bcd6ff; }
+        .login-card a.text-secondary { color: rgba(255, 255, 255, 0.6) !important; }
+        .login-card a:hover { color: #fff; }
         .brand-logo {
-            width: 60px;
-            height: 60px;
-            background: #316fc4;
-            color: white;
-            border-radius: 12px;
+            width: 110px;
+            height: 110px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 30px;
             margin: 0 auto 20px;
         }
+        /* Inputs stay near-opaque: typing needs to be clearly legible even
+           over a busy photo. */
         .form-control {
             padding: 12px;
             border-radius: 8px;
-            border: 1px solid #dee2e6;
+            background: rgba(255, 255, 255, 0.94);
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            color: #1c2b3f;
+        }
+        .form-control:focus {
+            background: #fff;
+            border-color: #6ea8ff;
+            box-shadow: 0 0 0 0.2rem rgba(110, 168, 255, 0.25);
         }
         .btn-primary {
             padding: 12px;
@@ -139,10 +156,11 @@ if(isset($_POST['login'])){
         }
     </style>
 </head>
-<body class="bg-light">
+<body>
+<?php render_page_background("dark"); ?>
 <div class="container d-flex justify-content-center">
-    <div class="card login-card" style="width: min(100%, 520px);">
-        <div class="brand-logo"><i class="bi bi-shield-check"></i></div>
+    <div class="card login-card" style="width: min(100%, 400px);">
+        <div class="brand-logo"><img src="assets/sbc-logo.png" alt="St. Bridget College" style="width:100%;height:100%;object-fit:contain"></div>
         <h4 class="text-center mb-1 fw-bold">Office Login</h4>
         <p class="text-center text-muted small mb-4">SBC Quality Assurance System</p>
         <?php if($error != ""): ?>

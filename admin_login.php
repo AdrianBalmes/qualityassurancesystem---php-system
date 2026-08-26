@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . "/database.php";
+require_once __DIR__ . "/page_background.php";
 require_once __DIR__ . "/profile_columns.php";
 require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/audit_log_helper.php";
@@ -76,16 +77,25 @@ if(isset($_POST['login'])){
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     <style>
         body { background: #0f172a; font-family: 'Inter', sans-serif; height: 100vh; display: flex; align-items: center; }
-        .login-card { border: none; border-radius: 16px; padding: 40px; background: #fff; box-shadow: 0 20px 50px rgba(0,0,0,0.3); }
-        .brand-logo { width: 60px; height: 60px; background: #dc3545; color: white; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 30px; margin: 0 auto 20px; }
-        .form-control { padding: 12px; border-radius: 8px; }
+        /* Frosted glass, matching the office login. */
+        .login-card { border: 1px solid rgba(255,255,255,0.22); border-radius: 16px; padding: 40px; background: rgba(15,23,42,0.45); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 20px 50px rgba(0,0,0,0.45); }
+        .login-card h4 { color: #fff; }
+        .login-card .text-muted { color: rgba(255,255,255,0.72) !important; }
+        .login-card .form-label { color: #fff; }
+        .login-card a { color: #bcd6ff; }
+        .login-card a.text-secondary { color: rgba(255,255,255,0.6) !important; }
+        .login-card a:hover { color: #fff; }
+        .brand-logo { width: 110px; height: 110px; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; }
+        .form-control { padding: 12px; border-radius: 8px; background: rgba(255,255,255,0.94); border: 1px solid rgba(255,255,255,0.35); color: #1c2b3f; }
+        .form-control:focus { background: #fff; border-color: #ff8a8a; box-shadow: 0 0 0 0.2rem rgba(220,53,69,0.25); }
         .btn-danger { padding: 12px; border-radius: 8px; font-weight: 600; }
     </style>
 </head>
 <body>
+<?php render_page_background("dark"); ?>
 <div class="container d-flex justify-content-center">
     <div class="card login-card" style="width: 400px;">
-        <div class="brand-logo"><i class="bi bi-shield-lock-fill"></i></div>
+        <div class="brand-logo"><img src="assets/sbc-logo.png" alt="St. Bridget College" style="width:100%;height:100%;object-fit:contain"></div>
         <h4 class="text-center mb-1 fw-bold">Admin Portal</h4>
         <p class="text-center text-muted small mb-4">SBC Quality Assurance System</p>
         <?php if($error): ?><div class="alert alert-danger py-2 small"><?php echo $error; ?></div><?php endif; ?>

@@ -15,11 +15,15 @@
 /**
  * @param string $profileUrl Where "Profile" should link.
  * @param string $label      Label for the entry that opens the profile page.
+ * @param string $scope      Which sign-in Sign Out ends: 'admin' or 'office'.
+ *                           Scoping it keeps the other one alive when both are
+ *                           signed in from the same browser.
  */
-function render_profile_dropdown($profileUrl, $label = 'My Profile'){
+function render_profile_dropdown($profileUrl, $label = 'My Profile', $scope = 'admin'){
     render_nav_dropdown_assets();
     $safeUrl = htmlspecialchars($profileUrl, ENT_QUOTES);
     $safeLabel = htmlspecialchars($label, ENT_QUOTES);
+    $safeScope = htmlspecialchars($scope === 'office' ? 'office' : 'admin', ENT_QUOTES);
 
     echo <<<HTML
 <div class="navdd">
@@ -27,7 +31,7 @@ function render_profile_dropdown($profileUrl, $label = 'My Profile'){
     <div class="navdd-menu" role="menu">
         <a class="navdd-item" role="menuitem" href="{$safeUrl}"><i class="bi bi-person-circle"></i> {$safeLabel}</a>
         <div class="navdd-sep"></div>
-        <a class="navdd-item navdd-signout" role="menuitem" href="logout.php"><i class="bi bi-box-arrow-right"></i> Sign Out</a>
+        <a class="navdd-item navdd-signout" role="menuitem" href="logout.php?scope={$safeScope}"><i class="bi bi-box-arrow-right"></i> Sign Out</a>
     </div>
 </div>
 HTML;

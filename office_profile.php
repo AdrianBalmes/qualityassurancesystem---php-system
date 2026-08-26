@@ -35,7 +35,7 @@ $officeDashboardUrl = "office_dashboard.php?office=" . urlencode($office);
 
 ensure_profile_columns($conn);
 ensure_user_account_columns($conn);
-enforce_active_account($conn);
+enforce_active_account($conn, 'office');
 
 $message = "";
 $error = "";
@@ -47,7 +47,8 @@ $stmt->execute();
 $user = $stmt->get_result()->fetch_assoc();
 
 if(!$user){
-    session_destroy();
+    require_once __DIR__ . "/session_scope.php";
+    session_scope_logout_office($_SESSION['office_name'] ?? '');
     header("Location: index.php");
     exit();
 }
@@ -176,7 +177,7 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
         <div class="brand"><span class="brand-icon"><img src="assets/sbc-logo.png" alt="St. Bridget College" style="width:100%;height:100%;object-fit:contain"></span><span>Office Profile</span></div>
         <nav class="nav-links">
             <a href="<?php echo htmlspecialchars($officeDashboardUrl, ENT_QUOTES); ?>"><i class="bi bi-speedometer2"></i> Office Dashboard</a>
-            <a href="logout.php"><i class="bi bi-box-arrow-right"></i> Logout</a>
+            <a href="logout.php?scope=office"><i class="bi bi-box-arrow-right"></i> Logout</a>
         </nav>
     </div>
 </header>
@@ -216,7 +217,7 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
                 </div>
                 <button type="button" class="action-btn w-100" id="showEditProfile"><i class="bi bi-pencil-square"></i> Edit Profile</button>
                 <a class="action-btn secondary-btn w-100" href="<?php echo htmlspecialchars($officeDashboardUrl, ENT_QUOTES); ?>"><i class="bi bi-arrow-left"></i> Back to Dashboard</a>
-                <a class="action-btn logout-btn w-100" href="logout.php"><i class="bi bi-box-arrow-right"></i> Sign Out</a>
+                <a class="action-btn logout-btn w-100" href="logout.php?scope=office"><i class="bi bi-box-arrow-right"></i> Sign Out</a>
             </div>
         </div>
         <div class="panel panel-pad edit-panel <?php echo ($message !== "" || $error !== "") ? "is-visible" : ""; ?>" id="editProfilePanel">

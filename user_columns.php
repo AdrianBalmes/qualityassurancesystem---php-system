@@ -72,17 +72,29 @@ function approved_admin_count($conn){
 
 /**
  * Re-check the signed-in account against the database on every page load, and
- * end the session if it is no longer approved.
+ * end that sign-in if it is no longer approved.
  *
  * Without this, revoking someone only takes effect at their next sign-in --
  * an admin whose access was withdrawn keeps working until they log out.
+ *
+ * $scope says which sign-in the calling page runs on: 'admin', 'office', or
+ * 'auto' for pages open to both. It matters because a browser can hold an
+ * admin and an office sign-in at once -- checking the admin account while
+ * rendering an office page would let a revoked office user carry on working.
  */
-function enforce_active_account($conn){
-    $isAdmin = isset($_SESSION['admin_username']);
+function enforce_active_account($conn, $scope = 'auto'){
+    require_once __DIR__ . "/session_scope.php";
+
+    if($scope === 'auto'){
+        $scope = session_scope_has_admin() ? 'admin' : 'office';
+    }
+
+    $isAdmin = ($scope === 'admin');
     $userId = (int) ($isAdmin ? ($_SESSION['admin_user_id'] ?? 0) : ($_SESSION['office_user_id'] ?? 0));
 
-    if(!$isAdmin && !isset($_SESSION['office_username'])){
-        return;  // Nobody is signed in; the page's own guard handles that.
+    // Nobody is signed in under this scope; the page's own guard handles that.
+    if($isAdmin ? !session_scope_has_admin() : !isset($_SESSION['office_username'])){
+        return;
     }
     if($userId <= 0){
         return;
@@ -101,7 +113,15 @@ function enforce_active_account($conn){
         return;
     }
 
-    session_destroy();
-    header("Location: " . ($isAdmin ? "admin_login.php" : "index.php") . "?revoked=1");
+    // Drop only the revoked sign-in. Anything else in this browser survives.
+    if($isAdmin){
+        session_scope_logout_admin();
+        $destination = session_scope_has_office() ? "office_dashboard.php" : "admin_login.php?revoked=1";
+    } else {
+        session_scope_logout_office($_SESSION['office_name'] ?? '');
+        $destination = session_scope_has_admin() ? "home.php" : "index.php?revoked=1";
+    }
+
+    header("Location: " . $destination);
     exit();
 }

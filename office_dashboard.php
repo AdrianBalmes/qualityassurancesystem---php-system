@@ -40,7 +40,7 @@ if(!isset($_SESSION['office_username']) || !isset($_SESSION['office_name'])){
 }
 
 ensure_user_account_columns($conn);
-enforce_active_account($conn);
+enforce_active_account($conn, 'office');
 
 $office = $_SESSION['office_name'];
 $officeDashboardUrl = "office_dashboard.php?office=" . urlencode($office);
@@ -264,7 +264,7 @@ img,canvas,svg{max-width:100%}
                 <ul class="dropdown-menu dropdown-menu-end">
                     <li><a class="dropdown-item" href="office_profile.php?office=<?php echo urlencode($office); ?>"><i class="bi bi-person-circle"></i> Office Profile</a></li>
                     <li><hr class="dropdown-divider"></li>
-                    <li><a class="dropdown-item signout" href="logout.php"><i class="bi bi-box-arrow-right"></i> Sign Out</a></li>
+                    <li><a class="dropdown-item signout" href="logout.php?scope=office&amp;office=<?php echo urlencode($office); ?>"><i class="bi bi-box-arrow-right"></i> Sign Out</a></li>
                 </ul>
             </div>
         </nav>

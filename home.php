@@ -16,7 +16,7 @@ if(!isset($_SESSION['admin_username']) || $_SESSION['admin_role'] != "admin"){
 }
 
 ensure_user_account_columns($conn);
-enforce_active_account($conn);
+enforce_active_account($conn, 'admin');
 ensure_review_columns($conn);
 
 $siteContent = sc_load($conn);

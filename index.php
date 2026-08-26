@@ -96,7 +96,7 @@ if(isset($_POST['login'])){
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     <style>
         body {
-            background: linear-gradient(135deg, #f6f8fb 0%, #e9effd 100%);
+            background: #0f172a;
             font-family: 'Inter', sans-serif;
             min-height: 100vh;
             display: flex;
@@ -105,10 +105,12 @@ if(isset($_POST['login'])){
         }
         .login-card {
             border: none;
-            border-radius: 8px;
-            box-shadow: 0 10px 25px rgba(44, 74, 119, 0.1);
-            padding: 28px;
+            border-radius: 16px;
+            padding: 40px;
             background: #fff;
+            /* Matches the admin portal. A soft blue shadow is invisible
+               against the dark background; this one lifts the card off it. */
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
         }
         .brand-logo {
             width: 110px;
@@ -139,7 +141,7 @@ if(isset($_POST['login'])){
 <body class="bg-light">
 <?php render_page_background("dark"); ?>
 <div class="container d-flex justify-content-center">
-    <div class="card login-card" style="width: min(100%, 520px);">
+    <div class="card login-card" style="width: min(100%, 400px);">
         <div class="brand-logo"><img src="assets/sbc-logo.png" alt="St. Bridget College" style="width:100%;height:100%;object-fit:contain"></div>
         <h4 class="text-center mb-1 fw-bold">Office Login</h4>
         <p class="text-center text-muted small mb-4">SBC Quality Assurance System</p>

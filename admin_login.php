@@ -77,9 +77,17 @@ if(isset($_POST['login'])){
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     <style>
         body { background: #0f172a; font-family: 'Inter', sans-serif; height: 100vh; display: flex; align-items: center; }
-        .login-card { border: none; border-radius: 16px; padding: 40px; background: #fff; box-shadow: 0 20px 50px rgba(0,0,0,0.3); }
+        /* Frosted glass, matching the office login. */
+        .login-card { border: 1px solid rgba(255,255,255,0.22); border-radius: 16px; padding: 40px; background: rgba(15,23,42,0.45); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 20px 50px rgba(0,0,0,0.45); }
+        .login-card h4 { color: #fff; }
+        .login-card .text-muted { color: rgba(255,255,255,0.72) !important; }
+        .login-card .form-label { color: #fff; }
+        .login-card a { color: #bcd6ff; }
+        .login-card a.text-secondary { color: rgba(255,255,255,0.6) !important; }
+        .login-card a:hover { color: #fff; }
         .brand-logo { width: 110px; height: 110px; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; }
-        .form-control { padding: 12px; border-radius: 8px; }
+        .form-control { padding: 12px; border-radius: 8px; background: rgba(255,255,255,0.94); border: 1px solid rgba(255,255,255,0.35); color: #1c2b3f; }
+        .form-control:focus { background: #fff; border-color: #ff8a8a; box-shadow: 0 0 0 0.2rem rgba(220,53,69,0.25); }
         .btn-danger { padding: 12px; border-radius: 8px; font-weight: 600; }
     </style>
 </head>

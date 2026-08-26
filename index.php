@@ -103,15 +103,24 @@ if(isset($_POST['login'])){
             align-items: center;
             padding: 24px 0;
         }
+        /* Frosted glass: the banner reads through the card, and the blur
+           keeps whatever is behind it from making the text unreadable. */
         .login-card {
-            border: none;
+            border: 1px solid rgba(255, 255, 255, 0.22);
             border-radius: 16px;
             padding: 40px;
-            background: #fff;
-            /* Matches the admin portal. A soft blue shadow is invisible
-               against the dark background; this one lifts the card off it. */
-            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+            background: rgba(15, 23, 42, 0.45);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
         }
+        /* Card text was dark for a white card; it sits on glass now. */
+        .login-card h4 { color: #fff; }
+        .login-card .text-muted { color: rgba(255, 255, 255, 0.72) !important; }
+        .login-card .form-label { color: #fff; }
+        .login-card a { color: #bcd6ff; }
+        .login-card a.text-secondary { color: rgba(255, 255, 255, 0.6) !important; }
+        .login-card a:hover { color: #fff; }
         .brand-logo {
             width: 110px;
             height: 110px;
@@ -120,10 +129,19 @@ if(isset($_POST['login'])){
             justify-content: center;
             margin: 0 auto 20px;
         }
+        /* Inputs stay near-opaque: typing needs to be clearly legible even
+           over a busy photo. */
         .form-control {
             padding: 12px;
             border-radius: 8px;
-            border: 1px solid #dee2e6;
+            background: rgba(255, 255, 255, 0.94);
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            color: #1c2b3f;
+        }
+        .form-control:focus {
+            background: #fff;
+            border-color: #6ea8ff;
+            box-shadow: 0 0 0 0.2rem rgba(110, 168, 255, 0.25);
         }
         .btn-primary {
             padding: 12px;

@@ -66,6 +66,17 @@ if($statusType !== null && stripos($statusType, 'enum(') === 0){
     $changes++;
 }
 
+// Offices moved from a hardcoded array into a table; seed it so a fresh
+// checkout has the same department list as before.
+require_once __DIR__ . "/office_directory.php";
+$officesBefore = mysqli_query($conn, "SHOW TABLES LIKE 'offices'");
+ensure_offices_table($conn);
+if($officesBefore && $officesBefore->num_rows === 0){
+    $seeded = mysqli_query($conn, "SELECT COUNT(*) AS total FROM offices")->fetch_assoc();
+    echo "  + created table offices ({$seeded['total']} seeded)\n";
+    $changes++;
+}
+
 // OneDrive sync tables create themselves on first use, but doing it here means
 // `onedrive_worker.php status` works on a brand new checkout.
 require_once __DIR__ . "/onedrive_sync.php";

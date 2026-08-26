@@ -21,7 +21,7 @@ const PAGE_BACKGROUND_IMAGE = 'assets/sbc-banner.jpg';
 /** How much veil sits over the photo. Higher = fainter photo. */
 const PAGE_BACKGROUND_VEIL_APP  = '0.80';
 const PAGE_BACKGROUND_VEIL_AUTH = '0.86';
-const PAGE_BACKGROUND_VEIL_DARK = '0.82';
+const PAGE_BACKGROUND_VEIL_DARK = '0.60';
 
 function render_page_background($variant = 'app'){
     static $done = false;

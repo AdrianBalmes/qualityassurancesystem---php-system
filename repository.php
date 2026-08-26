@@ -136,7 +136,7 @@ body{margin:0;background:#f4f6f9;color:#26354b;font-family:-apple-system,BlinkMa
 <?php render_page_background(); ?>
 <header class="topbar">
     <div class="nav-wrap">
-        <div class="brand"><span class="brand-icon"><i class="bi bi-folder2-open"></i></span><span>Document Repository</span></div>
+        <div class="brand"><span class="brand-icon"><img src="assets/sbc-logo.jpg" alt="St. Bridget College" style="width:100%;height:100%;object-fit:contain;border-radius:inherit"></span><span>Document Repository</span></div>
         <nav class="nav-links">
             <a href="<?php echo $isAdmin ? 'home.php' : 'office_dashboard.php'; ?>">Dashboard</a>
             <a href="repository.php">Repository</a>

@@ -254,7 +254,7 @@ img,canvas,svg{max-width:100%}
 <?php render_page_background(); ?>
 <header class="topbar">
     <div class="nav-wrap">
-        <div class="brand"><span class="brand-icon"><i class="bi bi-file-earmark-text-fill"></i></span><?php sc_span($siteContent, 'office.brand', 'SBC Quality Assurance Electronic Documentation'); ?></div>
+        <div class="brand"><span class="brand-icon"><img src="assets/sbc-logo.jpg" alt="St. Bridget College" style="width:100%;height:100%;object-fit:contain;border-radius:inherit"></span><?php sc_span($siteContent, 'office.brand', 'SBC Quality Assurance Electronic Documentation'); ?></div>
         <nav class="nav-links">
             <a href="<?php echo htmlspecialchars($officeDashboardUrl, ENT_QUOTES); ?>">Dashboard</a>
             <a href="repository.php">Repository</a>

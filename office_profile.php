@@ -173,7 +173,7 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
 <?php render_page_background(); ?>
 <header class="topbar">
     <div class="nav-wrap">
-        <div class="brand"><span class="brand-icon"><i class="bi bi-person-circle"></i></span><span>Office Profile</span></div>
+        <div class="brand"><span class="brand-icon"><img src="assets/sbc-logo.jpg" alt="St. Bridget College" style="width:100%;height:100%;object-fit:contain;border-radius:inherit"></span><span>Office Profile</span></div>
         <nav class="nav-links">
             <a href="<?php echo htmlspecialchars($officeDashboardUrl, ENT_QUOTES); ?>"><i class="bi bi-speedometer2"></i> Office Dashboard</a>
             <a href="logout.php"><i class="bi bi-box-arrow-right"></i> Logout</a>

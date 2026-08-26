@@ -98,7 +98,7 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
 <body>
 <header class="topbar">
     <div class="nav-wrap">
-        <div class="brand"><span class="brand-icon"><i class="bi bi-file-earmark-text-fill"></i></span><span>Document Viewer</span></div>
+        <div class="brand"><span class="brand-icon"><img src="assets/sbc-logo.jpg" alt="St. Bridget College" style="width:100%;height:100%;object-fit:contain;border-radius:inherit"></span><span>Document Viewer</span></div>
         <nav class="nav-links">
             <a href="repository.php">Repository</a>
             <a href="<?php echo htmlspecialchars($dashboardUrl, ENT_QUOTES); ?>">Dashboard</a>

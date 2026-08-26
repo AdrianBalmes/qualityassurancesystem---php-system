@@ -24,6 +24,8 @@ function od_config(){
     $config = [
         'enabled'        => env_bool('ONEDRIVE_ENABLED', false),
         'dry_run'        => env_bool('ONEDRIVE_DRY_RUN', false),
+        'mode'           => strtolower(env_get('ONEDRIVE_MODE', 'graph')),
+        'local_path'     => rtrim(env_get('ONEDRIVE_LOCAL_PATH', ''), "/\\"),
         'tenant_id'      => env_get('ONEDRIVE_TENANT_ID', ''),
         'client_id'      => env_get('ONEDRIVE_CLIENT_ID', ''),
         'client_secret'  => env_get('ONEDRIVE_CLIENT_SECRET', ''),
@@ -37,6 +39,12 @@ function od_config(){
     return $config;
 }
 
+/** True when the repository is a synced OneDrive folder on this machine. */
+function od_is_local_mode(){
+    $config = od_config();
+    return $config['mode'] === 'local';
+}
+
 /**
  * True when sync should run at all. Dry run counts as configured so the queue
  * can be exercised before IT provisions credentials.
@@ -48,6 +56,12 @@ function od_is_configured(){
     }
     if($config['dry_run']){
         return true;
+    }
+
+    // Local mode needs no credentials -- the OneDrive desktop client does the
+    // uploading. All we need is somewhere to write.
+    if(od_is_local_mode()){
+        return $config['local_path'] !== '' && is_dir($config['local_path']);
     }
 
     foreach(['tenant_id', 'client_id', 'client_secret', 'drive_user'] as $required){
@@ -176,11 +190,62 @@ function od_upload_file($conn, $localPath, $remotePath, $timeout = 60){
         ];
     }
 
+    if(od_is_local_mode()){
+        return od_copy_to_local($localPath, $remotePath);
+    }
+
     $token = od_get_access_token($conn, $timeout);
 
     return $size > OD_SIMPLE_LIMIT
         ? od_upload_large($token, $localPath, $remotePath, $size, $timeout)
         : od_upload_simple($token, $localPath, $remotePath, $timeout);
+}
+
+/**
+ * Copy the file into the locally synced OneDrive folder and let the OneDrive
+ * desktop client upload it. No credentials, no Graph, no admin consent -- but
+ * it only works on a machine where that client is installed and signed in.
+ *
+ * The copy lands on a temporary name in the destination directory first, then
+ * is renamed into place, so OneDrive never sees a half-written file and start
+ * uploading it.
+ */
+function od_copy_to_local($localPath, $remotePath){
+    $config = od_config();
+    $root = $config['local_path'];
+
+    if($root === '' || !is_dir($root)){
+        throw new RuntimeException("ONEDRIVE_LOCAL_PATH is not a directory: {$root}");
+    }
+
+    $destination = $root . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $remotePath);
+    $directory = dirname($destination);
+
+    if(!is_dir($directory) && !@mkdir($directory, 0777, true) && !is_dir($directory)){
+        throw new RuntimeException("Could not create repository folder: {$directory}");
+    }
+
+    $temp = $destination . '.qatmp';
+    if(!@copy($localPath, $temp)){
+        throw new RuntimeException("Could not copy into the OneDrive folder: {$destination}");
+    }
+
+    // rename() will not overwrite on Windows, so clear any previous copy first.
+    if(file_exists($destination)){
+        @unlink($destination);
+    }
+
+    if(!@rename($temp, $destination)){
+        @unlink($temp);
+        throw new RuntimeException("Could not finalise the repository copy: {$destination}");
+    }
+
+    return [
+        'id'      => 'local',
+        'web_url' => '',
+        'name'    => basename($destination),
+        'dry_run' => false,
+    ];
 }
 
 function od_upload_simple($token, $localPath, $remotePath, $timeout){

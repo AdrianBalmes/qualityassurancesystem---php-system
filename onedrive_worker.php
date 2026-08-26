@@ -53,7 +53,16 @@ function od_cmd_status($conn, $config){
     echo "  enabled     : " . ($config['enabled'] ? 'yes' : 'no') . "\n";
     echo "  dry run     : " . ($config['dry_run'] ? 'yes' : 'no') . "\n";
     echo "  configured  : " . (od_is_configured() ? 'yes' : 'no') . "\n";
-    echo "  drive user  : " . ($config['drive_user'] !== '' ? $config['drive_user'] : '(not set)') . "\n";
+    echo "  mode        : {$config['mode']}\n";
+
+    if(od_is_local_mode()){
+        $exists = $config['local_path'] !== '' && is_dir($config['local_path']);
+        echo "  local path  : " . ($config['local_path'] !== '' ? $config['local_path'] : '(not set)');
+        echo $exists ? "\n" : "   << not found\n";
+    } else {
+        echo "  drive user  : " . ($config['drive_user'] !== '' ? $config['drive_user'] : '(not set)') . "\n";
+    }
+
     echo "  root folder : {$config['root_folder']}\n\n";
 
     $result = mysqli_query($conn, "SELECT status, COUNT(*) AS total FROM onedrive_sync GROUP BY status ORDER BY status");

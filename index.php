@@ -156,7 +156,7 @@ if(isset($_POST['login'])){
         }
     </style>
 </head>
-<body class="bg-light">
+<body>
 <?php render_page_background("dark"); ?>
 <div class="container d-flex justify-content-center">
     <div class="card login-card" style="width: min(100%, 400px);">

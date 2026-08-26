@@ -103,7 +103,7 @@ body{background:linear-gradient(135deg,#f6f8fb 0%,#e9effd 100%);font-family:'Int
 .hint{font-size:12px;color:#8794a8}
 </style>
 </head>
-<body class="bg-light">
+<body>
 <?php render_page_background("auth"); ?>
 <div class="container d-flex justify-content-center">
     <div class="card register-card" style="width: min(100%, 620px);">

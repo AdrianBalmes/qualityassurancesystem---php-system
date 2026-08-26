@@ -57,8 +57,10 @@ function render_page_background($variant = 'app'){
 <style>
 html{background:{$fallback}}
 /* The layer below supplies the background, so the page's own solid colour
-   would hide it. */
-body{background-color:transparent !important;background-image:none !important}
+   would hide it. body[class] is needed as well as body: a utility class such
+   as Bootstrap's .bg-light is itself !important, and a class selector
+   outranks a bare element selector, so plain `body` loses to it. */
+body,body[class]{background-color:transparent !important;background-image:none !important}
 .page-bg{position:fixed;inset:0;z-index:-1;{$imageRule}}
 .page-bg::after{content:'';position:absolute;inset:0;background:{$veilColor}}
 @media print{.page-bg{display:none}}

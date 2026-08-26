@@ -75,7 +75,7 @@ if(isset($_POST['request_reset'])){
 <title>Forgot Password</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
-<body class="bg-light">
+<body>
 <?php render_page_background("auth"); ?>
 <div class="container d-flex justify-content-center align-items-center vh-100">
     <div class="card shadow p-4" style="width: 420px;">

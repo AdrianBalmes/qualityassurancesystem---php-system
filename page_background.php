@@ -16,7 +16,7 @@
  *     render_page_background('auth');    // login and register, more visible
  */
 
-const PAGE_BACKGROUND_IMAGE = 'uploads/sbc-banner.jpg';
+const PAGE_BACKGROUND_IMAGE = 'assets/sbc-banner.jpg';
 
 /** How much veil sits over the photo. Higher = fainter photo. */
 const PAGE_BACKGROUND_VEIL_APP  = '0.93';

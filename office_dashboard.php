@@ -179,7 +179,7 @@ body{margin:0;background:#f1f5fb;color:#344156;font-family:Arial,Helvetica,sans-
 .topbar{background:linear-gradient(135deg,#316fc4,#2459a6);color:#fff;box-shadow:0 8px 20px rgba(44,93,165,.2)}
 .nav-wrap{max-width:1680px;margin:auto;min-height:74px;padding:0 clamp(14px,2vw,32px);display:flex;align-items:center;justify-content:space-between;gap:18px}
 .brand{display:flex;align-items:center;gap:14px;font-size:22px;font-weight:800}
-.brand-icon{width:48px;height:48px;display:grid;place-items:center;flex-shrink:0}
+.brand-icon{width:64px;height:64px;display:grid;place-items:center;flex-shrink:0}
 .nav-links{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
 .nav-links a,.nav-links button{color:#eef4ff;text-decoration:none;font-weight:700;background:none;border:0;padding:0}
 .nav-dropdown-toggle{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
@@ -247,7 +247,7 @@ img,canvas,svg{max-width:100%}
 @media(max-width:1100px){.charts-grid{grid-template-columns:1fr}}
 @media(max-width:900px){.nav-wrap{flex-direction:column;align-items:flex-start;padding:14px 18px}.page-head{align-items:flex-start;flex-direction:column}}
 @media(max-width:620px){.brand{font-size:18px}}
-@media(max-width:480px){.page{padding:0 10px;margin:16px auto 28px}.panel-pad{padding:12px}.panel-title{font-size:15px}.page-title{font-size:20px}.brand{font-size:15px;gap:8px}.brand-icon{width:40px;height:40px}.nav-links{gap:12px;font-size:13px}}
+@media(max-width:480px){.page{padding:0 10px;margin:16px auto 28px}.panel-pad{padding:12px}.panel-title{font-size:15px}.page-title{font-size:20px}.brand{font-size:15px;gap:8px}.brand-icon{width:48px;height:48px}.nav-links{gap:12px;font-size:13px}}
 </style>
 </head>
 <body>

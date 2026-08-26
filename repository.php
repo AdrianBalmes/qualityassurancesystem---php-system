@@ -80,7 +80,7 @@ body{margin:0;background:#f4f6f9;color:#26354b;font-family:-apple-system,BlinkMa
 .topbar{background:linear-gradient(135deg,#316fc4,#2459a6);color:#fff;box-shadow:0 8px 20px rgba(44,93,165,.2)}
 .nav-wrap{max-width:1240px;margin:auto;min-height:70px;padding:0 20px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
 .brand{display:flex;align-items:center;gap:12px;font-size:19px;font-weight:800}
-.brand-icon{width:48px;height:48px;display:grid;place-items:center;flex-shrink:0}
+.brand-icon{width:64px;height:64px;display:grid;place-items:center;flex-shrink:0}
 .nav-links{display:flex;gap:18px;flex-wrap:wrap}
 .nav-links a{color:#eef4ff;text-decoration:none;font-weight:700;font-size:14px}
 .nav-links a:hover{text-decoration:underline}

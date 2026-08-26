@@ -111,15 +111,11 @@ if(isset($_POST['login'])){
             background: #fff;
         }
         .brand-logo {
-            width: 60px;
-            height: 60px;
-            background: #316fc4;
-            color: white;
-            border-radius: 12px;
+            width: 110px;
+            height: 110px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 30px;
             margin: 0 auto 20px;
         }
         .form-control {
@@ -144,7 +140,7 @@ if(isset($_POST['login'])){
 <?php render_page_background("dark"); ?>
 <div class="container d-flex justify-content-center">
     <div class="card login-card" style="width: min(100%, 520px);">
-        <div class="brand-logo"><i class="bi bi-shield-check"></i></div>
+        <div class="brand-logo"><img src="assets/sbc-logo.png" alt="St. Bridget College" style="width:100%;height:100%;object-fit:contain"></div>
         <h4 class="text-center mb-1 fw-bold">Office Login</h4>
         <p class="text-center text-muted small mb-4">SBC Quality Assurance System</p>
         <?php if($error != ""): ?>

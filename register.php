@@ -96,7 +96,7 @@ function reg_old($form, $key){
 <style>
 body{background:linear-gradient(135deg,#f6f8fb 0%,#e9effd 100%);font-family:'Inter',sans-serif;min-height:100vh;display:flex;align-items:center;padding:24px 0}
 .register-card{border:none;border-radius:8px;box-shadow:0 10px 25px rgba(44,74,119,.1);padding:28px;background:#fff}
-.brand-logo{width:60px;height:60px;background:#316fc4;color:#fff;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:30px;margin:0 auto 20px}
+.brand-logo{width:110px;height:110px;display:flex;align-items:center;justify-content:center;margin:0 auto 20px}
 .form-control,.form-select{padding:12px;border-radius:8px}
 .form-label{font-size:13px;font-weight:600}
 .btn-primary{padding:12px;border-radius:8px;font-weight:600}
@@ -107,7 +107,7 @@ body{background:linear-gradient(135deg,#f6f8fb 0%,#e9effd 100%);font-family:'Int
 <?php render_page_background("auth"); ?>
 <div class="container d-flex justify-content-center">
     <div class="card register-card" style="width: min(100%, 620px);">
-        <div class="brand-logo"><i class="bi bi-person-plus-fill"></i></div>
+        <div class="brand-logo"><img src="assets/sbc-logo.png" alt="St. Bridget College" style="width:100%;height:100%;object-fit:contain"></div>
         <h4 class="text-center mb-1 fw-bold">Create Account</h4>
         <p class="text-center text-muted small mb-4">Request access to the SBC Quality Assurance System</p>
 

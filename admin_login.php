@@ -78,7 +78,7 @@ if(isset($_POST['login'])){
     <style>
         body { background: #0f172a; font-family: 'Inter', sans-serif; height: 100vh; display: flex; align-items: center; }
         .login-card { border: none; border-radius: 16px; padding: 40px; background: #fff; box-shadow: 0 20px 50px rgba(0,0,0,0.3); }
-        .brand-logo { width: 60px; height: 60px; background: #dc3545; color: white; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 30px; margin: 0 auto 20px; }
+        .brand-logo { width: 110px; height: 110px; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; }
         .form-control { padding: 12px; border-radius: 8px; }
         .btn-danger { padding: 12px; border-radius: 8px; font-weight: 600; }
     </style>
@@ -87,7 +87,7 @@ if(isset($_POST['login'])){
 <?php render_page_background("dark"); ?>
 <div class="container d-flex justify-content-center">
     <div class="card login-card" style="width: 400px;">
-        <div class="brand-logo"><i class="bi bi-shield-lock-fill"></i></div>
+        <div class="brand-logo"><img src="assets/sbc-logo.png" alt="St. Bridget College" style="width:100%;height:100%;object-fit:contain"></div>
         <h4 class="text-center mb-1 fw-bold">Admin Portal</h4>
         <p class="text-center text-muted small mb-4">SBC Quality Assurance System</p>
         <?php if($error): ?><div class="alert alert-danger py-2 small"><?php echo $error; ?></div><?php endif; ?>

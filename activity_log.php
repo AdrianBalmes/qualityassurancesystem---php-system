@@ -155,7 +155,7 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
 .topbar{background:linear-gradient(135deg,#316fc4,#2459a6);color:#fff;box-shadow:0 8px 20px rgba(44,93,165,.2)}
 .nav-wrap{max-width:1680px;margin:auto;min-height:74px;padding:0 clamp(14px,2vw,32px);display:flex;align-items:center;justify-content:space-between;gap:18px}
 .brand{display:flex;align-items:center;gap:14px;font-size:22px;font-weight:800}
-.brand-icon{width:48px;height:48px;display:grid;place-items:center;flex-shrink:0}
+.brand-icon{width:64px;height:64px;display:grid;place-items:center;flex-shrink:0}
 .nav-links{display:flex;gap:20px;flex-wrap:wrap;align-items:center}
 .nav-links a{color:#eef4ff;text-decoration:none;font-weight:700}
 .dashboard{max-width:1680px;margin:26px auto 42px;padding:0 clamp(14px,2vw,32px)}

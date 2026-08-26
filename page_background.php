@@ -21,6 +21,7 @@ const PAGE_BACKGROUND_IMAGE = 'assets/sbc-banner.jpg';
 /** How much veil sits over the photo. Higher = fainter photo. */
 const PAGE_BACKGROUND_VEIL_APP  = '0.93';
 const PAGE_BACKGROUND_VEIL_AUTH = '0.86';
+const PAGE_BACKGROUND_VEIL_DARK = '0.82';
 
 function render_page_background($variant = 'app'){
     static $done = false;
@@ -29,17 +30,22 @@ function render_page_background($variant = 'app'){
     }
     $done = true;
 
-    $isAuth = $variant === 'auth';
-    $veil = $isAuth ? PAGE_BACKGROUND_VEIL_AUTH : PAGE_BACKGROUND_VEIL_APP;
-
-    // Fallbacks reproduce each page's original background, so a missing image
-    // leaves the design exactly as it was rather than a flat empty colour.
-    $fallback = $isAuth
-        ? 'linear-gradient(135deg,#f6f8fb 0%,#e9effd 100%)'
-        : '#eef3fb';
-
-    // rgba veil tinted to match the fallback.
-    $veilColor = $isAuth ? "rgba(248,250,253,{$veil})" : "rgba(238,243,251,{$veil})";
+    // Fallbacks reproduce the background each page would have without an
+    // image, so a missing file leaves the design intact rather than blank.
+    // The veil is tinted to match its fallback.
+    switch($variant){
+        case 'dark':   // the sign-in pages: white card on deep navy
+            $fallback = '#0f172a';
+            $veilColor = 'rgba(15,23,42,' . PAGE_BACKGROUND_VEIL_DARK . ')';
+            break;
+        case 'auth':
+            $fallback = 'linear-gradient(135deg,#f6f8fb 0%,#e9effd 100%)';
+            $veilColor = 'rgba(248,250,253,' . PAGE_BACKGROUND_VEIL_AUTH . ')';
+            break;
+        default:
+            $fallback = '#eef3fb';
+            $veilColor = 'rgba(238,243,251,' . PAGE_BACKGROUND_VEIL_APP . ')';
+    }
 
     $hasImage = is_file(__DIR__ . '/' . PAGE_BACKGROUND_IMAGE);
     $imageRule = $hasImage

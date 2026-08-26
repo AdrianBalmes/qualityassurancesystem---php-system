@@ -2,7 +2,10 @@
 session_start();
 require_once __DIR__ . "/database.php";
 require_once __DIR__ . "/profile_columns.php";
+require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/audit_log_helper.php";
+
+ensure_user_account_columns($conn);
 
 $error = "";
 
@@ -30,6 +33,10 @@ if(isset($_POST['login'])){
                 log_audit_event($conn, $username, 'office', $user['office'] ?? '', 'login_failed', 'user', $user['id'], "Failed office login attempt for username \"{$username}\" (wrong password)");
             } elseif($user['role'] === "admin"){
                 $error = "Admins must use the Admin Login portal.";
+            } elseif(($blockReason = user_login_block_reason($user)) !== ""){
+                // Registration is still queued, or was turned down.
+                $error = $blockReason;
+                log_audit_event($conn, $username, 'office', $user['office'] ?? '', 'login_blocked', 'user', $user['id'], "Sign-in refused for \"{$username}\": account is {$user['status']}");
             } elseif(trim($user['office']) === ""){
                 $error = "This account has no assigned office. Please contact the administrator.";
             } else {
@@ -49,9 +56,11 @@ if(isset($_POST['login'])){
                     'role' => $user['role'],
                     'office' => $user['office'],
                     'id' => $user['id'],
-                    'email' => $user['email']
+                    'email' => $user['email'],
+                    'full_name' => $user['full_name'] ?? ''
                 ];
 
+                $_SESSION['office_full_name'] = $user['full_name'] ?? '';
                 $_SESSION['office_username'] = $user['username'];
                 $_SESSION['office_role']     = $user['role'];
                 $_SESSION['office_name']     = $user['office'];
@@ -152,7 +161,8 @@ if(isset($_POST['login'])){
                 Login
             </button>
             <div class="mt-3 text-center">
-                <a href="forgot_password.php" class="text-decoration-none small d-block">Forgot password?</a>
+                <a href="register.php" class="text-decoration-none small d-block fw-bold">Create an account</a>
+                <a href="forgot_password.php" class="text-decoration-none small d-block mt-1">Forgot password?</a>
                 <a href="admin_login.php" class="text-decoration-none small d-block mt-1 text-secondary">Login as Admin</a>
             </div>
         </form>

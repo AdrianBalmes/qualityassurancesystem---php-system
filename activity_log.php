@@ -27,6 +27,9 @@ $knownActions = [
     'registration_submitted' => 'Registration Submitted',
     'user_approved' => 'Account Approved',
     'user_rejected' => 'Account Rejected',
+    'office_created' => 'Office Created',
+    'office_updated' => 'Office Updated',
+    'office_deleted' => 'Office Deleted',
     'recommendation_created' => 'Recommendation Created',
     'recommendation_updated' => 'Recommendation Updated',
     'recommendation_deleted' => 'Recommendation Deleted',
@@ -191,7 +194,7 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
 </head>
 <body>
 <?php render_page_background(); ?>
-<header class="topbar"><div class="nav-wrap"><div class="brand"><span class="brand-icon"><img src="assets/sbc-logo.png" alt="St. Bridget College" style="width:100%;height:100%;object-fit:contain"></span><?php sc_span($siteContent, 'home.brand', 'SBC Quality Assurance Electronic Documentation Dashboard'); ?></div><nav class="nav-links"><a href="home.php">Home</a><a href="repository.php">Repository</a><a href="activity_log.php">Activity Log</a><a href="manage_users.php">Users</a><?php render_profile_dropdown('admin_profile.php', 'Admin Profile'); ?></nav></div></header>
+<header class="topbar"><div class="nav-wrap"><div class="brand"><span class="brand-icon"><img src="assets/sbc-logo.png" alt="St. Bridget College" style="width:100%;height:100%;object-fit:contain"></span><?php sc_span($siteContent, 'home.brand', 'SBC Quality Assurance Electronic Documentation Dashboard'); ?></div><nav class="nav-links"><a href="home.php">Home</a><a href="repository.php">Repository</a><a href="activity_log.php">Activity Log</a><a href="manage_users.php">Users</a><a href="manage_offices.php">Offices</a><?php render_profile_dropdown('admin_profile.php', 'Admin Profile'); ?></nav></div></header>
 <main class="dashboard">
 <section class="panel panel-pad">
     <h2 class="panel-title"><i class="bi bi-clock-history"></i> Activity Log</h2>

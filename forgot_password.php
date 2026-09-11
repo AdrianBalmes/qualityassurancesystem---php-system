@@ -1,8 +1,9 @@
 <?php
-session_start();
+require_once __DIR__ . "/session_bootstrap.php";
 require_once __DIR__ . "/database.php";
 require_once __DIR__ . "/page_background.php";
 require_once __DIR__ . "/sms_helper.php";
+require_once __DIR__ . "/user_columns.php";
 
 if(isset($_SESSION['admin_username']) && $_SESSION['admin_role'] === 'admin'){
     header("Location: admin_profile.php");
@@ -14,20 +15,8 @@ if(isset($_SESSION['office_username']) && isset($_SESSION['office_name'])){
     exit();
 }
 
-if(!mysqli_query($conn, "SELECT phone FROM users LIMIT 1")){
-    mysqli_query($conn, "ALTER TABLE users ADD phone varchar(30) DEFAULT ''");
-}
-
-mysqli_query($conn, "CREATE TABLE IF NOT EXISTS password_resets (
-    id int(11) NOT NULL AUTO_INCREMENT,
-    user_id int(11) NOT NULL,
-    token_hash varchar(64) NOT NULL,
-    expires_at datetime NOT NULL,
-    used_at datetime DEFAULT NULL,
-    created_at datetime DEFAULT current_timestamp(),
-    PRIMARY KEY (id),
-    KEY token_hash (token_hash)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+user_col($conn, 'phone', "varchar(30) DEFAULT ''");
+ensure_password_resets_table($conn);
 
 $message = "";
 $error = "";
@@ -44,8 +33,20 @@ if(isset($_POST['request_reset'])){
         $stmt->execute();
         $user = $stmt->get_result()->fetch_assoc();
 
+        $recentRequests = 0;
+        if($user){
+            $recentStmt = $conn->prepare("SELECT COUNT(*) AS total FROM password_resets WHERE user_id = ? AND created_at > NOW() - INTERVAL ? MINUTE");
+            $window = PASSWORD_RESET_WINDOW_MINUTES;
+            $recentStmt->bind_param("ii", $user['id'], $window);
+            $recentStmt->execute();
+            $recentRequests = (int) $recentStmt->get_result()->fetch_assoc()['total'];
+        }
+
         if(!$user){
             $error = "Account and phone number do not match. Use the phone number saved in your profile.";
+        } elseif($recentRequests >= PASSWORD_RESET_MAX_REQUESTS){
+            // Each new code brings fresh guesses, so codes are rationed too.
+            $error = "Too many reset requests for this account. Please wait " . PASSWORD_RESET_WINDOW_MINUTES . " minutes and try again.";
         } else {
             $otp = (string)random_int(100000, 999999);
             $otpHash = hash('sha256', $otp);

@@ -40,10 +40,15 @@ never be committed. See [ONEDRIVE_SETUP.md](ONEDRIVE_SETUP.md).
 **4. Start it**
 
 ```bash
-php -S localhost:8080
+php -S localhost:8080 router.php
 ```
 
 Open <http://localhost:8080>.
+
+> Always pass `router.php`. Without it the built-in server hands out every file
+> in the folder to anyone who asks — `ems_db.sql` with its passwords, `.env`,
+> the `.git` history and every uploaded document. Under Apache, `.htaccess`
+> does the same job.
 
 ### If `database.php` doesn't match your setup
 

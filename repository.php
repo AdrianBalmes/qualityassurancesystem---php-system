@@ -1,5 +1,5 @@
 <?php
-session_start();
+require_once __DIR__ . "/session_bootstrap.php";
 require_once __DIR__ . "/database.php";
 require_once __DIR__ . "/page_background.php";
 require_once __DIR__ . "/user_columns.php";
@@ -21,7 +21,9 @@ if($isAdmin && isset($_POST['set_file_link'])){
     $documentId = intval($_POST['document_id'] ?? 0);
     $fileLink = trim($_POST['file_link'] ?? '');
 
-    if($fileLink !== '' && !filter_var($fileLink, FILTER_VALIDATE_URL)){
+    // FILTER_VALIDATE_URL alone accepts "javascript://..." -- which then runs
+    // as script when the viewer embeds or opens the link. Web links only.
+    if($fileLink !== '' && (!filter_var($fileLink, FILTER_VALIDATE_URL) || !preg_match('#^https?://#i', $fileLink))){
         echo "<script>alert('Enter a valid link URL, or leave it blank to remove the link.'); window.location='repository.php';</script>";
         exit();
     }

@@ -34,6 +34,41 @@ function user_col($conn, $column, $definition){
     }
 }
 
+/**
+ * Limits on the 6-digit password-reset code. Without them the code falls to
+ * guessing: a million possibilities, no cap on tries. With them an attacker
+ * gets 5 guesses per code and 3 codes per quarter hour.
+ */
+const PASSWORD_RESET_MAX_ATTEMPTS   = 5;
+const PASSWORD_RESET_MAX_REQUESTS   = 3;
+const PASSWORD_RESET_WINDOW_MINUTES = 15;
+
+function ensure_password_resets_table($conn){
+    static $done = false;
+    if($done){
+        return;
+    }
+    $done = true;
+
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS password_resets (
+        id int(11) NOT NULL AUTO_INCREMENT,
+        user_id int(11) NOT NULL,
+        token_hash varchar(64) NOT NULL,
+        expires_at datetime NOT NULL,
+        used_at datetime DEFAULT NULL,
+        attempts int(11) NOT NULL DEFAULT 0,
+        created_at datetime DEFAULT current_timestamp(),
+        PRIMARY KEY (id),
+        KEY token_hash (token_hash)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+
+    // Tables created before the attempt limit existed lack the counter.
+    $result = mysqli_query($conn, "SHOW COLUMNS FROM password_resets LIKE 'attempts'");
+    if($result && $result->num_rows === 0){
+        mysqli_query($conn, "ALTER TABLE password_resets ADD COLUMN attempts int(11) NOT NULL DEFAULT 0");
+    }
+}
+
 /** Human-readable status, for badges and messages. */
 function user_status_label($status){
     switch($status){
@@ -100,7 +135,7 @@ function enforce_active_account($conn, $scope = 'auto'){
         return;
     }
 
-    $stmt = $conn->prepare("SELECT status, role FROM users WHERE id = ? LIMIT 1");
+    $stmt = $conn->prepare("SELECT status, role, office FROM users WHERE id = ? LIMIT 1");
     $stmt->bind_param("i", $userId);
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
@@ -110,6 +145,9 @@ function enforce_active_account($conn, $scope = 'auto'){
         && (($row['role'] === 'admin') === $isAdmin);
 
     if($stillValid){
+        if(!$isAdmin){
+            session_scope_follow_office_rename((string) $row['office']);
+        }
         return;
     }
 

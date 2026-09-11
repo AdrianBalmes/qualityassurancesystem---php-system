@@ -1,6 +1,9 @@
 <?php
-session_start();
+require_once __DIR__ . "/session_bootstrap.php";
 require_once __DIR__ . "/database.php";
+require_once __DIR__ . "/user_columns.php";
+
+ensure_password_resets_table($conn);
 
 $resetId = isset($_GET['reset_id']) ? intval($_GET['reset_id']) : 0;
 $message = "";
@@ -19,26 +22,55 @@ if(!$reset){
 }
 
 if($reset && isset($_POST['reset_password'])){
-    $otp = trim($_POST['otp']);
-    $newPassword = trim($_POST['new_password']);
-    $confirmPassword = trim($_POST['confirm_password']);
-    $otpHash = hash('sha256', $otp);
+    $otp = trim($_POST['otp'] ?? '');
+    $newPassword = trim($_POST['new_password'] ?? '');
+    $confirmPassword = trim($_POST['confirm_password'] ?? '');
 
-    $verify = $conn->prepare("SELECT id FROM password_resets WHERE id = ? AND token_hash = ? AND used_at IS NULL AND expires_at > NOW() LIMIT 1");
-    $verify->bind_param("is", $reset['id'], $otpHash);
-    $verify->execute();
-    $otpIsValid = $verify->get_result()->num_rows === 1;
-
+    // Check the new password first, so a typo there does not cost a guess.
+    $formError = "";
     if($otp === ""){
-        $error = "Enter the OTP sent to your phone.";
+        $formError = "Enter the OTP sent to your phone.";
+    } elseif($newPassword === ""){
+        $formError = "Enter a new password.";
+    } elseif(strlen($newPassword) < 8){
+        // Same minimum as registration.
+        $formError = "Password must be at least 8 characters.";
+    } elseif($newPassword !== $confirmPassword){
+        $formError = "New password and confirmation do not match.";
+    }
+
+    $otpIsValid = false;
+    $attemptClaimed = false;
+    if($formError === ""){
+        // Take one attempt before looking at the code. Doing it in a single
+        // conditional UPDATE means parallel guesses cannot slip past the limit.
+        $maxAttempts = PASSWORD_RESET_MAX_ATTEMPTS;
+        $claim = $conn->prepare("UPDATE password_resets SET attempts = attempts + 1 WHERE id = ? AND used_at IS NULL AND expires_at > NOW() AND attempts < ?");
+        $claim->bind_param("ii", $reset['id'], $maxAttempts);
+        $claim->execute();
+        $attemptClaimed = $claim->affected_rows === 1;
+
+        if($attemptClaimed){
+            $otpHash = hash('sha256', $otp);
+            $verify = $conn->prepare("SELECT id FROM password_resets WHERE id = ? AND token_hash = ? LIMIT 1");
+            $verify->bind_param("is", $reset['id'], $otpHash);
+            $verify->execute();
+            $otpIsValid = $verify->get_result()->num_rows === 1;
+        } else {
+            // Out of attempts: retire the code so it can never be used.
+            $burn = $conn->prepare("UPDATE password_resets SET used_at = NOW() WHERE id = ? AND used_at IS NULL");
+            $burn->bind_param("i", $reset['id']);
+            $burn->execute();
+        }
+    }
+
+    if($formError !== ""){
+        $error = $formError;
+    } elseif(!$attemptClaimed){
+        $error = "Too many incorrect codes. Please request a new one.";
+        $reset = null;
     } elseif(!$otpIsValid){
         $error = "Invalid or expired OTP.";
-    } elseif($newPassword === ""){
-        $error = "Enter a new password.";
-    } elseif(strlen($newPassword) < 6){
-        $error = "Password must be at least 6 characters.";
-    } elseif($newPassword !== $confirmPassword){
-        $error = "New password and confirmation do not match.";
     } else {
         $hashedPassword = password_hash($newPassword, PASSWORD_DEFAULT);
         $update = $conn->prepare("UPDATE users SET password = ? WHERE id = ?");

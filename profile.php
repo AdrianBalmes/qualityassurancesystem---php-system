@@ -1,5 +1,5 @@
 <?php
-session_start();
+require_once __DIR__ . "/session_bootstrap.php";
 
 if(isset($_SESSION['admin_username']) && $_SESSION['admin_role'] === 'admin'){
     header("Location: admin_profile.php");

@@ -1,5 +1,5 @@
 <?php
-session_start();
+require_once __DIR__ . "/session_bootstrap.php";
 require_once __DIR__ . "/database.php";
 require_once __DIR__ . "/page_background.php";
 require_once __DIR__ . "/profile_columns.php";
@@ -42,6 +42,10 @@ if(isset($_POST['login'])){
                 $rehashStmt->bind_param("si", $rehash, $user['id']);
                 $rehashStmt->execute();
             }
+
+            // New session id at sign-in, so an id someone planted or saw before
+            // this point is worthless afterwards. Other sign-ins carry over.
+            session_regenerate_id(true);
 
             $_SESSION['admin_full_name'] = $user['full_name'] ?? '';
             $_SESSION['admin_username'] = $user['username'];
@@ -98,7 +102,7 @@ if(isset($_POST['login'])){
         <div class="brand-logo"><img src="assets/sbc-logo.png" alt="St. Bridget College" style="width:100%;height:100%;object-fit:contain"></div>
         <h4 class="text-center mb-1 fw-bold">Admin Portal</h4>
         <p class="text-center text-muted small mb-4">SBC Quality Assurance System</p>
-        <?php if($error): ?><div class="alert alert-danger py-2 small"><?php echo $error; ?></div><?php endif; ?>
+        <?php if($error): ?><div class="alert alert-danger py-2 small"><?php echo htmlspecialchars($error, ENT_QUOTES); ?></div><?php endif; ?>
         <form method="POST">
             <div class="mb-3">
                 <label class="form-label small fw-bold">Admin Username</label>

@@ -18,12 +18,15 @@ function sendPasswordResetOtpText($conn, $phone, $otp){
         return false;
     }
 
+    // Queued for an SMS gateway to send. Nothing reads this table yet, so the
+    // code never reaches the user -- delivery still has to be built. The code
+    // is deliberately not written to the error log: logs outlive the 10-minute
+    // code and are read by far more people than the database is.
     ensureSmsOutboxTable($conn);
     $stmt = $conn->prepare("INSERT INTO sms_outbox (phone, message, status) VALUES (?, ?, 'pending')");
     $stmt->bind_param("ss", $phone, $message);
     $stmt->execute();
 
-    error_log("Password reset OTP for {$phone}: {$otp}");
     return true;
 }
 ?>

@@ -62,6 +62,27 @@ function session_scope_logout_office($office = ''){
     return '';
 }
 
+/**
+ * Point the active office sign-in at the name its account now has in the
+ * database. An admin renaming an office changes it under everyone signed in to
+ * it; without this their pages keep looking for records under the old name --
+ * an empty dashboard, and every submission refused as "not your office".
+ */
+function session_scope_follow_office_rename($currentName){
+    $oldName = $_SESSION['office_name'] ?? '';
+    if($currentName === '' || $currentName === $oldName){
+        return;
+    }
+
+    if(isset($_SESSION['office_logins'][$oldName])){
+        $login = $_SESSION['office_logins'][$oldName];
+        unset($_SESSION['office_logins'][$oldName]);
+        $login['office'] = $currentName;
+        $_SESSION['office_logins'][$currentName] = $login;
+    }
+    $_SESSION['office_name'] = $currentName;
+}
+
 /** Sign out of everything and dispose of the session properly. */
 function session_scope_logout_all(){
     $_SESSION = [];

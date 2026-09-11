@@ -2,7 +2,12 @@
 /.vscode/
 /vendor/
 /node_modules/
-/uploads/
+# Uploaded files stay out of git, but the rules that keep them private do not.
+/uploads/*
+!/uploads/.htaccess
+!/uploads/avatars/
+/uploads/avatars/*
+!/uploads/avatars/.htaccess
 *.log
 mail_test_write.tmp
 Thumbs.db

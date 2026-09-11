@@ -1,5 +1,5 @@
 <?php
-session_start();
+require_once __DIR__ . "/session_bootstrap.php";
 require_once __DIR__ . "/database.php";
 require_once __DIR__ . "/audit_classification.php";
 require_once __DIR__ . "/office_directory.php";
@@ -17,6 +17,26 @@ ensure_review_columns($conn);
 
 $adminUsername = $_SESSION['admin_username'];
 $action = $_POST['action'] ?? '';
+
+/**
+ * Stop the OneDrive worker retrying files that no longer exist. Rows already
+ * uploaded are kept as the record of what the repository holds.
+ */
+function forget_pending_onedrive_sync($conn, array $docIds){
+    if(empty($docIds)){
+        return;
+    }
+    // The queue table only exists once OneDrive sync has been used.
+    $table = mysqli_query($conn, "SHOW TABLES LIKE 'onedrive_sync'");
+    if(!$table || $table->num_rows === 0){
+        return;
+    }
+
+    $placeholders = implode(',', array_fill(0, count($docIds), '?'));
+    $stmt = $conn->prepare("DELETE FROM onedrive_sync WHERE source_table = 'recommendation_documents' AND status <> 'uploaded' AND source_id IN ($placeholders)");
+    $stmt->bind_param(str_repeat('i', count($docIds)), ...$docIds);
+    $stmt->execute();
+}
 
 if($action === 'add_office_recommendation'){
     $office = trim($_POST['office'] ?? '');
@@ -87,13 +107,45 @@ if($action === 'delete'){
         $beforeStmt->execute();
         $beforeRow = $beforeStmt->get_result()->fetch_assoc();
 
-        $stmt = $conn->prepare("DELETE FROM audit_recommendations WHERE id = ?");
-        $stmt->bind_param("i", $id);
-        $stmt->execute();
+        // Its supporting documents go with it. The schema has no foreign keys,
+        // so left alone their rows and files would stay in uploads/ forever
+        // with nothing pointing at them.
+        $docsStmt = $conn->prepare("SELECT id, file_name FROM recommendation_documents WHERE recommendation_id = ?");
+        $docsStmt->bind_param("i", $id);
+        $docsStmt->execute();
+        $docs = $docsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+        $conn->begin_transaction();
+        try {
+            $docDelete = $conn->prepare("DELETE FROM recommendation_documents WHERE recommendation_id = ?");
+            $docDelete->bind_param("i", $id);
+            $docDelete->execute();
+
+            $stmt = $conn->prepare("DELETE FROM audit_recommendations WHERE id = ?");
+            $stmt->bind_param("i", $id);
+            $stmt->execute();
+
+            $conn->commit();
+        } catch(Throwable $e){
+            $conn->rollback();
+            http_response_code(500);
+            echo json_encode(['ok' => false, 'error' => 'Could not delete that recommendation']);
+            exit();
+        }
+
+        // Remove files only once the rows are gone for good.
+        foreach($docs as $doc){
+            $filePath = __DIR__ . "/uploads/" . basename($doc['file_name']);
+            if(is_file($filePath)){
+                unlink($filePath);
+            }
+        }
+        forget_pending_onedrive_sync($conn, array_map(function($doc){ return (int) $doc['id']; }, $docs));
 
         if($beforeRow){
             $snippet = mb_substr(trim($beforeRow['recommendation']), 0, 80);
-            log_audit_event($conn, $adminUsername, 'admin', $beforeRow['office'], 'recommendation_deleted', 'recommendation', $id, "Deleted recommendation for {$beforeRow['office']}: \"{$snippet}\"");
+            $docNote = count($docs) > 0 ? " and " . count($docs) . " supporting document(s)" : "";
+            log_audit_event($conn, $adminUsername, 'admin', $beforeRow['office'], 'recommendation_deleted', 'recommendation', $id, "Deleted recommendation{$docNote} for {$beforeRow['office']}: \"{$snippet}\"");
         }
     }
     echo json_encode(['ok' => true]);
@@ -111,10 +163,11 @@ if($action === 'delete_document'){
             $deleteStmt = $conn->prepare("DELETE FROM recommendation_documents WHERE id = ?");
             $deleteStmt->bind_param("i", $docId);
             $deleteStmt->execute();
-            $filePath = __DIR__ . "/uploads/" . $docRow['file_name'];
+            $filePath = __DIR__ . "/uploads/" . basename($docRow['file_name']);
             if(is_file($filePath)){
                 unlink($filePath);
             }
+            forget_pending_onedrive_sync($conn, [$docId]);
 
             log_audit_event($conn, $adminUsername, 'admin', $docRow['office'], 'document_deleted', 'document', $docId, "Deleted submitted document \"{$docRow['original_name']}\" ({$docRow['office']})");
         }

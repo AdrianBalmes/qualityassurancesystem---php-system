@@ -52,6 +52,10 @@ ensure_column($conn, 'users', 'reviewed_by',   "varchar(50) DEFAULT NULL", $chan
 ensure_column($conn, 'users', 'reviewed_at',   "datetime DEFAULT NULL", $changes);
 ensure_column($conn, 'users', 'review_reason', "text DEFAULT NULL", $changes);
 
+// Usernames were unique only by convention: two accounts sharing one could
+// neither sign in, since the office login expects exactly one match.
+ensure_unique_username($conn, $changes);
+
 // review_columns.php. TEXT columns cannot carry a DEFAULT on MySQL 8, though
 // MariaDB permits it -- so review_remarks is added without one.
 ensure_column($conn, 'audit_recommendations', 'review_remarks', "text", $changes);
@@ -104,7 +108,7 @@ if(is_readable(__DIR__ . "/.env")){
     echo "           (only needed for OneDrive sync; the app runs without it)\n";
 }
 
-echo "\nSetup complete. Start the app with:\n  php -S localhost:8080\n";
+echo "\nSetup complete. Start the app with:\n  php -S localhost:8080 router.php\n";
 
 // ---------------------------------------------------------------------------
 
@@ -124,6 +128,26 @@ function ensure_column($conn, $table, $column, $definition, &$changes){
     }
     mysqli_query($conn, "ALTER TABLE `{$table}` ADD COLUMN `{$column}` {$definition}");
     echo "  + {$table}.{$column}\n";
+    $changes++;
+}
+
+function ensure_unique_username($conn, &$changes){
+    $existing = mysqli_query($conn, "SHOW INDEX FROM users WHERE Key_name = 'username_unique'");
+    if($existing && $existing->num_rows > 0){
+        return;
+    }
+
+    // Refuse rather than guess which of two same-named accounts to keep.
+    $dupes = mysqli_query($conn, "SELECT username FROM users GROUP BY username HAVING COUNT(*) > 1");
+    if($dupes && $dupes->num_rows > 0){
+        $names = [];
+        while($row = $dupes->fetch_assoc()){ $names[] = $row['username']; }
+        echo "  SKIPPED  unique usernames -- rename the duplicates first: " . implode(', ', $names) . "\n";
+        return;
+    }
+
+    mysqli_query($conn, "ALTER TABLE users ADD UNIQUE KEY username_unique (username)");
+    echo "  + users.username made unique\n";
     $changes++;
 }
 

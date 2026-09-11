@@ -1,5 +1,5 @@
 <?php
-session_start();
+require_once __DIR__ . "/session_bootstrap.php";
 require_once __DIR__ . "/database.php";
 require_once __DIR__ . "/page_background.php";
 require_once __DIR__ . "/profile_columns.php";
@@ -84,6 +84,9 @@ if(isset($_POST['save_profile'])){
             $error = "Current password is incorrect.";
         } elseif($newPassword !== "" && $newPassword !== $confirmPassword){
             $error = "New password and confirmation do not match.";
+        } elseif($newPassword !== "" && strlen($newPassword) < 8){
+            // Same minimum as registration and password reset.
+            $error = "New password must be at least 8 characters.";
         } else {
             $newPhotoName = $user['profile_photo'];
 
@@ -98,7 +101,8 @@ if(isset($_POST['save_profile'])){
                 } elseif($_FILES['avatar']['size'] > 3 * 1024 * 1024){
                     $error = "Profile photo must be smaller than 3MB.";
                 } else {
-                    $safeBase = preg_replace('/[^A-Za-z0-9._-]+/', '_', pathinfo($originalName, PATHINFO_FILENAME));
+                    // Capped so the stored name stays under Windows' 255-character limit.
+                    $safeBase = substr(preg_replace('/[^A-Za-z0-9._-]+/', '_', pathinfo($originalName, PATHINFO_FILENAME)), 0, 100);
                     $newPhotoName = $safeBase . "_" . date("YmdHis") . "_" . bin2hex(random_bytes(3)) . "." . $ext;
                     if(!move_uploaded_file($tmpName, $avatarDir . $newPhotoName)){
                         $error = "Could not upload the profile photo. Please try again.";

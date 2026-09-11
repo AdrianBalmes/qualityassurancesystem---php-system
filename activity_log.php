@@ -1,5 +1,5 @@
 <?php
-session_start();
+require_once __DIR__ . "/session_bootstrap.php";
 require_once __DIR__ . "/database.php";
 require_once __DIR__ . "/page_background.php";
 require_once __DIR__ . "/user_columns.php";
@@ -94,9 +94,16 @@ if(isset($_GET['export']) && $_GET['export'] === 'csv'){
     header('Content-Disposition: attachment; filename="activity_log_' . date('Ymd_His') . '.csv"');
     $out = fopen('php://output', 'w');
     fputcsv($out, ['Date/Time', 'Actor', 'Role', 'Office', 'Action', 'Description', 'IP Address']);
+    // Excel runs a cell starting with = + - or @ as a formula, and descriptions
+    // carry text anyone can type at registration (their "full name"). A
+    // leading apostrophe makes Excel show it as plain text instead.
+    $csvCell = function($value){
+        $value = (string) $value;
+        return preg_match('/^[=+\-@\t\r]/', $value) ? "'" . $value : $value;
+    };
     while($row = $result->fetch_assoc()){
         $actionLabel = $knownActions[$row['action']] ?? $row['action'];
-        fputcsv($out, [$row['created_at'], $row['actor_username'], $row['actor_role'], $row['office'], $actionLabel, $row['description'], $row['ip_address']]);
+        fputcsv($out, array_map($csvCell, [$row['created_at'], $row['actor_username'], $row['actor_role'], $row['office'], $actionLabel, $row['description'], $row['ip_address']]));
     }
     fclose($out);
     exit();

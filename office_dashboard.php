@@ -1,5 +1,5 @@
 <?php
-session_start();
+require_once __DIR__ . "/session_bootstrap.php";
 require_once __DIR__ . "/database.php";
 require_once __DIR__ . "/page_background.php";
 require_once __DIR__ . "/user_columns.php";
@@ -62,11 +62,21 @@ function office_dashboard_redirect($office, $url, $message){
     exit();
 }
 
+// "40M" from php.ini, as "40 MB" for people.
+$uploadLimitLabel = preg_replace('/^(\d+)\s*([KMG])$/i', '$1 $2B', trim((string) ini_get('post_max_size')));
+
+// A form bigger than post_max_size arrives with $_POST and $_FILES both empty:
+// PHP throws away the whole submission, typed response included. Without this
+// the dashboard simply reloaded and the office assumed it had gone through.
+if($_SERVER['REQUEST_METHOD'] === 'POST' && empty($_POST) && empty($_FILES) && (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 0){
+    office_dashboard_redirect($office, $officeDashboardUrl . "#recommendations", "Nothing was saved: the attached file is larger than the {$uploadLimitLabel} upload limit. Please attach a smaller file and submit again.");
+}
+
 if(isset($_POST['submit_compliance'])){
     $recId = intval($_POST['recommendation_id'] ?? 0);
     $complianceResponse = trim($_POST['compliance_response'] ?? '');
 
-    $ownStmt = $conn->prepare("SELECT id, year FROM audit_recommendations WHERE id = ? AND office = ? LIMIT 1");
+    $ownStmt = $conn->prepare("SELECT id, year, status FROM audit_recommendations WHERE id = ? AND office = ? LIMIT 1");
     $ownStmt->bind_param("is", $recId, $office);
     $ownStmt->execute();
     $ownedRec = $ownStmt->get_result()->fetch_assoc();
@@ -76,6 +86,13 @@ if(isset($_POST['submit_compliance'])){
         office_dashboard_redirect($office, $officeDashboardUrl, 'That recommendation does not belong to your office.');
     }
 
+    // Saving always moves the row to 'Submitted', which on a Completed item
+    // would quietly reopen it and pull the compliance rate down. Completed is
+    // final for the office; only an administrator can reopen it.
+    if($ownedRec['status'] === 'Completed'){
+        office_dashboard_redirect($office, $officeDashboardUrl . "#recommendations", 'This recommendation is already marked Completed, so it can no longer be changed. Contact the QA office if it needs to be reopened.');
+    }
+
     $updateStmt = $conn->prepare("UPDATE audit_recommendations SET remarks = ?, status = 'Submitted' WHERE id = ? AND office = ?");
     $updateStmt->bind_param("sis", $complianceResponse, $recId, $office);
     $updateStmt->execute();
@@ -83,6 +100,17 @@ if(isset($_POST['submit_compliance'])){
     log_audit_event($conn, $_SESSION['office_username'], 'office', $office, 'compliance_submitted', 'recommendation', $recId, "{$office} submitted a compliance response for recommendation #{$recId}");
 
     if(!empty($_FILES['compliance_file']['name'])){
+        $uploadError = (int) $_FILES['compliance_file']['error'];
+        if($uploadError !== UPLOAD_ERR_OK){
+            $reasons = [
+                UPLOAD_ERR_INI_SIZE  => "it is larger than the {$uploadLimitLabel} upload limit",
+                UPLOAD_ERR_FORM_SIZE => "it is larger than the {$uploadLimitLabel} upload limit",
+                UPLOAD_ERR_PARTIAL   => "the upload was interrupted",
+            ];
+            $reason = $reasons[$uploadError] ?? "the server could not receive it";
+            office_dashboard_redirect($office, $officeDashboardUrl . "#recommendations", "Compliance saved, but the attached file was not uploaded because {$reason}. Please try attaching it again.");
+        }
+
         $original_name = basename($_FILES['compliance_file']['name']);
         $tmp_name = $_FILES['compliance_file']['tmp_name'];
         $file_ext = strtolower(pathinfo($original_name, PATHINFO_EXTENSION));
@@ -92,23 +120,32 @@ if(isset($_POST['submit_compliance'])){
             office_dashboard_redirect($office, $officeDashboardUrl . "#recommendations", 'Compliance saved. The attached file type is not supported, so it was not uploaded.');
         }
 
-        $safe_base = preg_replace('/[^A-Za-z0-9._-]+/', '_', pathinfo($original_name, PATHINFO_FILENAME));
+        // Windows caps a file name at 255 characters, and so does the
+        // original_name column. A long name used to fail to save while the
+        // office was told it had succeeded.
+        if(mb_strlen($original_name) > 255){
+            $original_name = mb_substr(pathinfo($original_name, PATHINFO_FILENAME), 0, 250 - strlen($file_ext)) . "." . $file_ext;
+        }
+        $safe_base = substr(preg_replace('/[^A-Za-z0-9._-]+/', '_', pathinfo($original_name, PATHINFO_FILENAME)), 0, 100);
         $file_name = $safe_base . "_" . date("YmdHis") . "_" . bin2hex(random_bytes(3)) . "." . $file_ext;
         $upload_path = "uploads/" . $file_name;
 
-        if(move_uploaded_file($tmp_name, $upload_path)){
-            $docStmt = $conn->prepare("INSERT INTO recommendation_documents (recommendation_id, office, file_name, original_name) VALUES (?,?,?,?)");
-            $docStmt->bind_param("isss", $recId, $office, $file_name, $original_name);
-            $docStmt->execute();
-            $documentId = $conn->insert_id;
-
-            log_audit_event($conn, $_SESSION['office_username'], 'office', $office, 'document_uploaded', 'document', $documentId, "{$office} uploaded supporting document \"{$original_name}\" for recommendation #{$recId}");
-
-            // Mirror the file into the shared OneDrive repository. This never
-            // throws -- if OneDrive is unreachable the file is queued and
-            // onedrive_worker.php retries it later.
-            od_queue_and_sync($conn, 'recommendation_documents', $documentId, $office, $file_name, $original_name, $ownedRec['year'] ?? '');
+        if(!move_uploaded_file($tmp_name, $upload_path)){
+            error_log("[upload] could not store \"{$original_name}\" as {$upload_path}");
+            office_dashboard_redirect($office, $officeDashboardUrl . "#recommendations", 'Compliance saved, but the attached file could not be stored on the server. Please try attaching it again.');
         }
+
+        $docStmt = $conn->prepare("INSERT INTO recommendation_documents (recommendation_id, office, file_name, original_name) VALUES (?,?,?,?)");
+        $docStmt->bind_param("isss", $recId, $office, $file_name, $original_name);
+        $docStmt->execute();
+        $documentId = $conn->insert_id;
+
+        log_audit_event($conn, $_SESSION['office_username'], 'office', $office, 'document_uploaded', 'document', $documentId, "{$office} uploaded supporting document \"{$original_name}\" for recommendation #{$recId}");
+
+        // Mirror the file into the shared OneDrive repository. This never
+        // throws -- if OneDrive is unreachable the file is queued and
+        // onedrive_worker.php retries it later.
+        od_queue_and_sync($conn, 'recommendation_documents', $documentId, $office, $file_name, $original_name, $ownedRec['year'] ?? '');
     }
 
     office_dashboard_redirect($office, $officeDashboardUrl . "#recommendations", 'Compliance update submitted successfully.');
@@ -345,12 +382,19 @@ img,canvas,svg{max-width:100%}
                         $safeRemarksValue = htmlspecialchars($row['remarks'] ?? '', ENT_QUOTES);
                         $reviewFeedbackDisplay = !empty($row['review_remarks']) ? nl2br(htmlspecialchars($row['review_remarks'], ENT_QUOTES)) : '<span class="muted-copy">No feedback yet</span>';
 
+                        // Completed is final for the office (the server refuses it too).
+                        $actionHtml = $row['status'] === 'Completed'
+                            ? "<span class='muted-copy'><i class='bi bi-lock-fill'></i> Completed</span>"
+                            : "<button type='button' class='compliance-btn' data-bs-toggle='modal' data-bs-target='#complianceModal' data-rec-id='{$recId}' data-remarks=\"{$safeRemarksValue}\">
+                                    <i class='bi bi-pencil-square'></i> Update Compliance
+                                </button>";
+
                         $docsHtml = '<span class="muted-copy">None yet</span>';
                         if(!empty($docsByRecommendation[$recId])){
                             $docsForJs = [];
                             foreach($docsByRecommendation[$recId] as $doc){
                                 $docsForJs[] = [
-                                    'url' => "uploads/" . rawurlencode($doc['file_name']),
+                                    'url' => "serve_upload.php?id=" . (int) $doc['id'],
                                     'label' => $doc['original_name'],
                                 ];
                             }
@@ -367,11 +411,7 @@ img,canvas,svg{max-width:100%}
                             <td class='rec-text-cell'>{$remarksDisplay}</td>
                             <td class='rec-text-cell'><div class='review-feedback-block'>{$reviewFeedbackDisplay}</div></td>
                             <td>{$docsHtml}</td>
-                            <td>
-                                <button type='button' class='compliance-btn' data-bs-toggle='modal' data-bs-target='#complianceModal' data-rec-id='{$recId}' data-remarks=\"{$safeRemarksValue}\">
-                                    <i class='bi bi-pencil-square'></i> Update Compliance
-                                </button>
-                            </td>
+                            <td>{$actionHtml}</td>
                         </tr>
                         ";
                     }
@@ -446,7 +486,7 @@ img,canvas,svg{max-width:100%}
                                     $docUploaded = $latestUpload !== '' ? htmlspecialchars(date("M j, Y g:i A", strtotime($latestUpload)), ENT_QUOTES) : '&mdash;';
                                     $filesHtml = "<div class='doc-pill-list'>";
                                     foreach($group['docs'] as $doc){
-                                        $docUrl = "uploads/" . rawurlencode($doc['file_name']);
+                                        $docUrl = "serve_upload.php?id=" . (int) $doc['id'];
                                         $docLabel = htmlspecialchars($doc['original_name'], ENT_QUOTES);
                                         $filesHtml .= "<a class='doc-pill' href='" . htmlspecialchars($docUrl, ENT_QUOTES) . "' target='_blank'><i class='bi bi-paperclip'></i> {$docLabel}</a>";
                                     }

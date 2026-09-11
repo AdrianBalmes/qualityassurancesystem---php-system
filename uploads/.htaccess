@@ -1,0 +1,4 @@
+# Uploaded compliance documents are never served directly. serve_upload.php and
+# download_document.php stream them after checking the viewer may see them.
+# Profile photos in avatars/ are the one exception -- see avatars/.htaccess.
+Require all denied

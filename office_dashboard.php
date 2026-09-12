@@ -46,6 +46,22 @@ $office = $_SESSION['office_name'];
 $officeDashboardUrl = "office_dashboard.php?office=" . urlencode($office);
 $officeAuditType = audit_type_for_office($office);
 
+/**
+ * Finish a form submission with a real HTTP redirect, carrying the message to
+ * the next page load in the session (Post/Redirect/Get).
+ *
+ * Replying with <script>alert(); window.location = sameUrl + '#recommendations'
+ * left users on a blank page: pointing the browser at the URL it is already on
+ * plus a #fragment only scrolls, it never reloads, so the empty script-only
+ * response stayed on screen. Refreshing it then offered to resubmit the form
+ * and upload the file a second time. A 302 always loads the dashboard fresh.
+ */
+function office_dashboard_redirect($office, $url, $message){
+    $_SESSION['office_flash'][$office] = $message;
+    header("Location: " . $url);
+    exit();
+}
+
 if(isset($_POST['submit_compliance'])){
     $recId = intval($_POST['recommendation_id'] ?? 0);
     $complianceResponse = trim($_POST['compliance_response'] ?? '');
@@ -57,8 +73,7 @@ if(isset($_POST['submit_compliance'])){
     $ownsRow = $ownedRec !== null;
 
     if(!$ownsRow){
-        echo "<script>alert('That recommendation does not belong to your office.'); window.location=" . json_encode($officeDashboardUrl) . ";</script>";
-        exit();
+        office_dashboard_redirect($office, $officeDashboardUrl, 'That recommendation does not belong to your office.');
     }
 
     $updateStmt = $conn->prepare("UPDATE audit_recommendations SET remarks = ?, status = 'Submitted' WHERE id = ? AND office = ?");
@@ -74,8 +89,7 @@ if(isset($_POST['submit_compliance'])){
         $allowed_ext = ['doc', 'docx', 'pdf', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png'];
 
         if(!in_array($file_ext, $allowed_ext, true)){
-            echo "<script>alert('Compliance saved. The attached file type is not supported, so it was not uploaded.'); window.location=" . json_encode($officeDashboardUrl . "#recommendations") . ";</script>";
-            exit();
+            office_dashboard_redirect($office, $officeDashboardUrl . "#recommendations", 'Compliance saved. The attached file type is not supported, so it was not uploaded.');
         }
 
         $safe_base = preg_replace('/[^A-Za-z0-9._-]+/', '_', pathinfo($original_name, PATHINFO_FILENAME));
@@ -97,9 +111,12 @@ if(isset($_POST['submit_compliance'])){
         }
     }
 
-    echo "<script>alert('Compliance update submitted successfully.'); window.location=" . json_encode($officeDashboardUrl . "#recommendations") . ";</script>";
-    exit();
+    office_dashboard_redirect($office, $officeDashboardUrl . "#recommendations", 'Compliance update submitted successfully.');
 }
+
+// A message left by the submission that redirected here, shown once.
+$flashMessage = $_SESSION['office_flash'][$office] ?? '';
+unset($_SESSION['office_flash'][$office]);
 
 $recStmt = $conn->prepare("SELECT * FROM audit_recommendations WHERE office = ? ORDER BY year DESC, id DESC");
 $recStmt->bind_param("s", $office);
@@ -566,6 +583,14 @@ new Chart(document.getElementById('peerComplianceChart'), {
     });
 })();
 </script>
+<?php if($flashMessage !== ''): ?>
+<script>
+// Wait for the dashboard to paint so the alert sits over it, not a white page.
+window.addEventListener('load', function(){
+    setTimeout(function(){ alert(<?php echo json_encode($flashMessage, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>); }, 0);
+});
+</script>
+<?php endif; ?>
 <?php render_edit_toggle(); ?>
 </body>
 </html>

@@ -5,6 +5,7 @@ require_once __DIR__ . "/page_background.php";
 require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/audit_log_helper.php";
 require_once __DIR__ . "/nav_dropdown.php";
+require_once __DIR__ . "/office_directory.php";
 
 if(!isset($_SESSION['admin_username']) && !isset($_SESSION['office_username'])){
     header("Location: index.php");
@@ -66,6 +67,46 @@ if($isAdmin){
 $documentRows = $documents ? $documents->fetch_all(MYSQLI_ASSOC) : [];
 $totalDocs = count($documentRows);
 $onedriveCount = count(array_filter($documentRows, function($row){ return !empty($row['file_link']); }));
+
+/**
+ * One folder per department, counting the supporting documents offices upload
+ * with their compliance updates (recommendation_documents). That is a separate
+ * store from the approved `documents` listed further down this page.
+ */
+$departmentFolders = [];
+if($isAdmin){
+    $counts = [];
+    $countResult = mysqli_query($conn, "SELECT office, COUNT(*) AS total, MAX(uploaded_at) AS latest
+                                        FROM recommendation_documents WHERE office <> '' GROUP BY office");
+    if($countResult){
+        while($countRow = mysqli_fetch_assoc($countResult)){
+            $counts[$countRow['office']] = ['total' => (int) $countRow['total'], 'latest' => $countRow['latest']];
+        }
+    }
+
+    // Every department gets a folder, even an empty one, so the grid is the
+    // full directory rather than only whoever has uploaded so far.
+    $folderNames = get_all_office_names($conn);
+    foreach(array_keys($counts) as $nameWithFiles){
+        // Files left behind by an office that was since renamed or removed.
+        if(!in_array($nameWithFiles, $folderNames, true)){
+            $folderNames[] = $nameWithFiles;
+        }
+    }
+    natcasesort($folderNames);
+
+    foreach($folderNames as $folderName){
+        if(trim($folderName) === '' || $folderName === 'Admin'){
+            continue;
+        }
+        $departmentFolders[] = [
+            'office' => $folderName,
+            'total'  => $counts[$folderName]['total'] ?? 0,
+            'latest' => $counts[$folderName]['latest'] ?? '',
+        ];
+    }
+}
+$departmentFileTotal = array_sum(array_column($departmentFolders, 'total'));
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -115,6 +156,22 @@ body{margin:0;background:#f4f6f9;color:#26354b;font-family:-apple-system,BlinkMa
 .btn-link{background:#e3edfb;color:#1f5fbf}
 .btn-link:hover{background:#d4e4f7}
 .empty-state{padding:34px 18px;text-align:center;color:#8794a8;font-weight:700;font-size:13.5px}
+.section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+.section-title{margin:0 0 4px;font-size:17px;font-weight:800;color:#1c2b3f;display:flex;align-items:center;gap:8px}
+.section-title i{color:#f0b429}
+.section-subtitle{margin:0;font-size:13px;color:#66758d;font-weight:600}
+.folder-search{max-width:270px}
+.folder-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(252px,1fr));gap:12px}
+.folder-card{display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px solid #e6ebf3;border-radius:11px;background:#fff;text-decoration:none;color:inherit;transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease}
+.folder-card:hover{border-color:#c6d8f2;box-shadow:0 8px 20px rgba(15,26,42,.08);transform:translateY(-1px)}
+.folder-icon{font-size:27px;color:#f0b429;line-height:1;flex-shrink:0}
+.folder-card.is-empty .folder-icon{color:#cbd3de}
+.folder-body{display:flex;flex-direction:column;min-width:0;flex:1}
+.folder-name{font-weight:800;font-size:14px;color:#1c2b3f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.folder-meta{font-size:12px;color:#8794a8;font-weight:600;margin-top:2px}
+.folder-count{background:#eef4ff;color:#2459a6;border-radius:999px;padding:5px 11px;font-size:12px;font-weight:800;white-space:nowrap}
+.folder-card.is-empty .folder-count{background:#f1f3f7;color:#8794a8}
+.folders-card{margin-bottom:20px}
 .modal-backdrop-custom{position:fixed;inset:0;background:rgba(15,26,42,.45);opacity:0;pointer-events:none;transition:opacity .2s ease;z-index:1100;display:flex;align-items:center;justify-content:center;padding:20px}
 .modal-backdrop-custom.is-open{opacity:1;pointer-events:auto}
 .link-modal{background:#fff;border-radius:12px;box-shadow:0 20px 50px rgba(15,26,42,.3);width:min(460px,100%);padding:26px 28px;transform:translateY(16px);transition:transform .2s ease}
@@ -153,8 +210,46 @@ body{margin:0;background:#f4f6f9;color:#26354b;font-family:-apple-system,BlinkMa
         <div class="summary-pills">
             <span class="summary-pill"><i class="bi bi-files"></i> <?php echo $totalDocs; ?> file<?php echo $totalDocs === 1 ? '' : 's'; ?></span>
             <span class="summary-pill"><i class="bi bi-cloud-check"></i> <?php echo $onedriveCount; ?> linked to OneDrive</span>
+            <?php if($isAdmin): ?>
+            <span class="summary-pill"><i class="bi bi-folder-fill"></i> <?php echo count($departmentFolders); ?> department<?php echo count($departmentFolders) === 1 ? '' : 's'; ?> &middot; <?php echo $departmentFileTotal; ?> file<?php echo $departmentFileTotal === 1 ? '' : 's'; ?></span>
+            <?php endif; ?>
         </div>
     </div>
+    <?php if($isAdmin): ?>
+    <section class="card folders-card">
+        <div class="section-head">
+            <div>
+                <h2 class="section-title"><i class="bi bi-folder-fill"></i> Department Folders</h2>
+                <p class="section-subtitle">Files each department uploaded with its compliance updates. Open a folder to see them.</p>
+            </div>
+            <input type="search" class="field-input folder-search" id="folderSearch" placeholder="Search department">
+        </div>
+        <div class="folder-grid" id="folderGrid">
+            <?php foreach($departmentFolders as $folder):
+                $folderCount = (int) $folder['total'];
+                $folderLatest = $folder['latest'] !== '' && $folder['latest'] !== null
+                    ? 'Last upload ' . date("M j, Y", strtotime($folder['latest']))
+                    : 'No uploads yet';
+            ?>
+            <a class="folder-card<?php echo $folderCount === 0 ? ' is-empty' : ''; ?>"
+               href="department_files.php?office=<?php echo urlencode($folder['office']); ?>"
+               data-folder="<?php echo htmlspecialchars(strtolower($folder['office']), ENT_QUOTES); ?>">
+                <span class="folder-icon"><i class="bi bi-folder-fill"></i></span>
+                <span class="folder-body">
+                    <span class="folder-name"><?php echo htmlspecialchars($folder['office'], ENT_QUOTES); ?></span>
+                    <span class="folder-meta"><?php echo htmlspecialchars($folderLatest, ENT_QUOTES); ?></span>
+                </span>
+                <span class="folder-count"><?php echo $folderCount; ?> file<?php echo $folderCount === 1 ? '' : 's'; ?></span>
+            </a>
+            <?php endforeach; ?>
+        </div>
+        <?php if(empty($departmentFolders)): ?>
+            <div class="empty-state">No departments yet</div>
+        <?php endif; ?>
+        <p class="repo-summary" id="folderNoMatch" style="display:none;margin-top:14px">No department matches that search.</p>
+    </section>
+    <?php endif; ?>
+
     <section class="card">
         <div class="repo-controls">
             <input type="search" class="field-input" id="repositorySearch" placeholder="Search title, file, or office">
@@ -261,6 +356,25 @@ body{margin:0;background:#f4f6f9;color:#26354b;font-family:-apple-system,BlinkMa
         }
     });
     applyFilters();
+})();
+
+// Narrow the department folders by name.
+(function(){
+    var folderSearch = document.getElementById('folderSearch');
+    var noMatch = document.getElementById('folderNoMatch');
+    var cards = [].slice.call(document.querySelectorAll('.folder-card'));
+    if(!folderSearch || !cards.length){ return; }
+
+    folderSearch.addEventListener('input', function(){
+        var term = folderSearch.value.trim().toLowerCase();
+        var shown = 0;
+        cards.forEach(function(card){
+            var match = !term || (card.getAttribute('data-folder') || '').indexOf(term) !== -1;
+            card.style.display = match ? '' : 'none';
+            if(match){ shown++; }
+        });
+        if(noMatch){ noMatch.style.display = shown === 0 ? '' : 'none'; }
+    });
 })();
 
 (function(){

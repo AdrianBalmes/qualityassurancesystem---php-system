@@ -1,5 +1,5 @@
 <?php
-session_start();
+require_once __DIR__ . "/session_bootstrap.php";
 require_once __DIR__ . "/database.php";
 require_once __DIR__ . "/audit_classification.php";
 require_once __DIR__ . "/office_rec_render.php";

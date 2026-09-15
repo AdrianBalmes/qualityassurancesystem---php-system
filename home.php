@@ -1,5 +1,5 @@
 <?php
-session_start();
+require_once __DIR__ . "/session_bootstrap.php";
 require_once __DIR__ . "/database.php";
 require_once __DIR__ . "/page_background.php";
 require_once __DIR__ . "/user_columns.php";
@@ -449,7 +449,16 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
     var addRowBtn = document.getElementById('addRowBtn');
     if(!officeTabs || !auditTbody || !auditTitle){ return; }
 
+    // Office names are pasted into HTML below; an apostrophe ("Dean's Office")
+    // used to end the data-office attribute early and break the row's buttons.
+    function escapeHtml(text){
+        return String(text).replace(/[&<>"']/g, function(ch){
+            return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[ch];
+        });
+    }
+
     function rowActionsHtml(office, recId){
+        office = escapeHtml(office);
         return "<div class='row-actions'>" +
             "<button type='button' class='row-edit-btn' title='Edit row'><i class='bi bi-pencil'></i> Edit</button>" +
             "<button type='button' class='row-save-btn' title='Save row'><i class='bi bi-check2'></i> Save</button>" +
@@ -463,7 +472,7 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
         tr.setAttribute('data-id', id);
         tr.setAttribute('data-mode', 'edit');
         tr.innerHTML =
-            "<td class='cell-readonly'>" + office + "</td>" +
+            "<td class='cell-readonly'>" + escapeHtml(office) + "</td>" +
             "<td><div class='cell-text grid-rec-cell' contenteditable='true' data-field='recommendation'></div></td>" +
             "<td><select class='cell-select' data-field='status'>" +
                 "<option value='Pending' selected>Pending</option>" +

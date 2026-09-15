@@ -1,0 +1,6 @@
+# Profile photos are shown in the page header, so images here stay public.
+# Anything else that ends up in this folder does not.
+Require all denied
+<FilesMatch "(?i)\.(png|jpe?g|gif|webp)$">
+    Require all granted
+</FilesMatch>

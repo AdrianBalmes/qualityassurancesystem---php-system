@@ -1,6 +1,18 @@
 <?php
-session_start();
+require_once __DIR__ . "/session_bootstrap.php";
 require_once __DIR__ . "/database.php";
+require_once __DIR__ . "/user_columns.php";
+require_once __DIR__ . "/upload_access.php";
+
+/**
+ * Stream a repository document.
+ *
+ *   download_document.php?id=N           save it
+ *   download_document.php?id=N&inline=1  show it in the page (PDFs, images)
+ *
+ * Also accepts a short-lived signed link from view_document.php: Word opens
+ * files through the ms-word: protocol and cannot send the login cookie.
+ */
 
 if(isset($_SESSION['office_logins']) && is_array($_SESSION['office_logins'])){
     $requestedOffice = isset($_GET['office']) ? trim($_GET['office']) : '';
@@ -14,12 +26,17 @@ if(isset($_SESSION['office_logins']) && is_array($_SESSION['office_logins'])){
     }
 }
 
-if(!isset($_SESSION['admin_username']) && !isset($_SESSION['office_username'])){
-    header("Location: index.php");
-    exit();
+$id = isset($_GET['id']) ? intval($_GET['id']) : 0;
+$signed = $id > 0 && upload_signature_is_valid($conn, 'document', $id);
+
+if(!$signed){
+    if(!isset($_SESSION['admin_username']) && !isset($_SESSION['office_username'])){
+        header("Location: index.php");
+        exit();
+    }
+    enforce_active_account($conn);
 }
 
-$id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 if($id <= 0){
     http_response_code(400);
     exit("Invalid document.");
@@ -35,10 +52,7 @@ if(!$doc){
     exit("Document not found.");
 }
 
-$isAdmin = isset($_SESSION['admin_username']) && $_SESSION['admin_role'] === 'admin';
-$userOffice = $isAdmin ? ($_SESSION['admin_office'] ?? '') : ($_SESSION['office_name'] ?? '');
-$isOwnerOffice = ($userOffice === $doc['office']);
-if(!$isAdmin && !$isOwnerOffice){
+if(!$signed && !upload_viewer_can_see_office($doc['office'])){
     http_response_code(403);
     exit("You are not allowed to download this document.");
 }
@@ -56,26 +70,4 @@ if(!is_file($filePath)){
     exit("Uploaded file not found.");
 }
 
-$mimeTypes = [
-    "doc" => "application/msword",
-    "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "pdf" => "application/pdf",
-    "xls" => "application/vnd.ms-excel",
-    "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "ppt" => "application/vnd.ms-powerpoint",
-    "pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    "jpg" => "image/jpeg",
-    "jpeg" => "image/jpeg",
-    "png" => "image/png"
-];
-$fileExt = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
-$contentType = $mimeTypes[$fileExt] ?? "application/octet-stream";
-
-header("Content-Description: File Transfer");
-header("Content-Type: " . $contentType);
-header("Content-Disposition: attachment; filename=\"" . $fileName . "\"");
-header("Content-Length: " . filesize($filePath));
-header("Cache-Control: private, max-age=0, must-revalidate");
-readfile($filePath);
-exit();
-?>
+upload_send_file($filePath, $fileName, isset($_GET['inline']));

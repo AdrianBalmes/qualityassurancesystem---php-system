@@ -1,5 +1,5 @@
 <?php
-session_start();
+require_once __DIR__ . "/session_bootstrap.php";
 require_once __DIR__ . "/database.php";
 require_once __DIR__ . "/page_background.php";
 require_once __DIR__ . "/content_helper.php";
@@ -95,7 +95,9 @@ if(isset($_POST['update_office'])){
 
         $renamed = 0;
         if($newName !== $office['name']){
-            foreach(['users', 'audit_recommendations', 'recommendation_documents'] as $table){
+            // documents is the repository's own table; missing it here left
+            // a renamed office unable to open its older repository files.
+            foreach(['users', 'audit_recommendations', 'recommendation_documents', 'documents'] as $table){
                 $cascade = $conn->prepare("UPDATE `{$table}` SET office = ? WHERE office = ?");
                 $cascade->bind_param("ss", $newName, $office['name']);
                 $cascade->execute();

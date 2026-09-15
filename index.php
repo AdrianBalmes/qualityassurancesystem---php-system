@@ -1,5 +1,5 @@
 <?php
-session_start();
+require_once __DIR__ . "/session_bootstrap.php";
 require_once __DIR__ . "/database.php";
 require_once __DIR__ . "/page_background.php";
 require_once __DIR__ . "/profile_columns.php";
@@ -47,6 +47,11 @@ if(isset($_POST['login'])){
                     $updatePassword->bind_param("si", $hashedPassword, $user['id']);
                     $updatePassword->execute();
                 }
+
+                // New session id at sign-in, so an id someone planted or saw
+                // before this point is worthless afterwards. Other sign-ins held
+                // by this browser carry over.
+                session_regenerate_id(true);
 
                 if(!isset($_SESSION['office_logins']) || !is_array($_SESSION['office_logins'])){
                     $_SESSION['office_logins'] = [];
@@ -164,7 +169,7 @@ if(isset($_POST['login'])){
         <h4 class="text-center mb-1 fw-bold">Office Login</h4>
         <p class="text-center text-muted small mb-4">SBC Quality Assurance System</p>
         <?php if($error != ""): ?>
-            <div class="alert alert-danger"><?php echo $error; ?></div>
+            <div class="alert alert-danger"><?php echo htmlspecialchars($error, ENT_QUOTES); ?></div>
         <?php endif; ?>
         <form method="POST" action="">
             <div class="mb-3">

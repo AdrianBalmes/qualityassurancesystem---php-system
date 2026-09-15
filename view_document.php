@@ -1,6 +1,8 @@
 <?php
-session_start();
+require_once __DIR__ . "/session_bootstrap.php";
 require_once __DIR__ . "/database.php";
+require_once __DIR__ . "/user_columns.php";
+require_once __DIR__ . "/upload_access.php";
 
 if(isset($_SESSION['office_logins']) && is_array($_SESSION['office_logins'])){
     $requestedOffice = isset($_GET['office']) ? trim($_GET['office']) : '';
@@ -18,6 +20,7 @@ if(!isset($_SESSION['admin_username']) && !isset($_SESSION['office_username'])){
     header("Location: index.php");
     exit();
 }
+enforce_active_account($conn);
 
 $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 if($id <= 0){
@@ -36,16 +39,15 @@ if(!$doc){
 }
 
 $isAdmin = isset($_SESSION['admin_username']) && $_SESSION['admin_role'] === 'admin';
-$userOffice = $isAdmin ? ($_SESSION['admin_office'] ?? '') : ($_SESSION['office_name'] ?? '');
-$isOwnerOffice = ($userOffice === $doc['office']);
-if(!$isAdmin && !$isOwnerOffice){
+if(!upload_viewer_can_see_office($doc['office'])){
     http_response_code(403);
     exit("You are not allowed to view this document.");
 }
 
 $fileName = basename($doc['file_name']);
 $fileExt = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
-$localUrl = "uploads/" . rawurlencode($fileName);
+// uploads/ is not public; the file is streamed after the same access check.
+$localUrl = "download_document.php?id={$id}&inline=1";
 $viewUrl = !empty($doc['file_link']) ? $doc['file_link'] : $localUrl;
 $safeViewUrl = htmlspecialchars($viewUrl, ENT_QUOTES);
 $downloadUrl = "download_document.php?id=" . $id;
@@ -61,7 +63,10 @@ $canUseOfficeViewer = in_array($fileExt, ['doc', 'docx', 'xls', 'xlsx', 'ppt', '
 $officeViewerUrl = $canUseOfficeViewer ? "https://view.officeapps.live.com/op/embed.aspx?src=" . rawurlencode($doc['file_link']) : "";
 $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https" : "http";
 $basePath = rtrim(str_replace("\\", "/", dirname($_SERVER['SCRIPT_NAME'])), "/");
-$absoluteLocalUrl = $scheme . "://" . $_SERVER['HTTP_HOST'] . ($basePath !== "" ? $basePath : "") . "/" . $localUrl;
+// Word downloads the file itself, without the login cookie, so it is given a
+// link that works for 15 minutes. The trailing name keeps the file type visible.
+$absoluteLocalUrl = $scheme . "://" . $_SERVER['HTTP_HOST'] . ($basePath !== "" ? $basePath : "")
+    . "/download_document.php?" . upload_signed_query($conn, 'document', $id) . "&name=" . rawurlencode($fileName);
 $absoluteViewUrl = !empty($doc['file_link']) ? $doc['file_link'] : $absoluteLocalUrl;
 $appProtocols = [
     "doc" => "ms-word:ofe|u|",

@@ -1,5 +1,5 @@
 <?php
-session_start();
+require_once __DIR__ . "/session_bootstrap.php";
 
 $selectedAudit = isset($_GET['audit']) ? trim($_GET['audit']) : 'External';
 if(!in_array($selectedAudit, ['External', 'Internal'], true)){

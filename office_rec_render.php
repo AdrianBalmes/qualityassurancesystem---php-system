@@ -56,7 +56,7 @@ function render_office_recommendation_rows($rows, $selectedOffice, $selectedAudi
             foreach($docsByRecommendation[$recId] as $doc){
                 $docsForJs[] = [
                     'id' => (int) $doc['id'],
-                    'url' => "uploads/" . rawurlencode($doc['file_name']),
+                    'url' => "serve_upload.php?id=" . (int) $doc['id'],
                     'label' => $doc['original_name'],
                 ];
             }

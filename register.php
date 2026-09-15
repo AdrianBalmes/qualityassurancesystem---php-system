@@ -1,5 +1,5 @@
 <?php
-session_start();
+require_once __DIR__ . "/session_bootstrap.php";
 require_once __DIR__ . "/database.php";
 require_once __DIR__ . "/page_background.php";
 require_once __DIR__ . "/profile_columns.php";
@@ -67,15 +67,29 @@ if(isset($_POST['register'])){
 
             $insert = $conn->prepare("INSERT INTO users (username, password, email, phone, role, office, full_name, status) VALUES (?,?,?,?,?,?,?,?)");
             $insert->bind_param("ssssssss", $form['username'], $hashed, $form['email'], $form['phone'], $role, $form['office'], $form['full_name'], $pending);
-            $insert->execute();
-            $newUserId = $conn->insert_id;
+            try {
+                $insert->execute();
+            } catch(mysqli_sql_exception $e){
+                // Two people claimed the name at the same moment and the
+                // unique index stopped the second. Anything else is a real fault.
+                if($e->getCode() !== 1062){
+                    throw $e;
+                }
+                $insert = null;
+            }
 
-            $whatKind = $wantsAdmin ? 'an administrator' : "a {$form['office']}";
-            log_audit_event($conn, $form['username'], $wantsAdmin ? 'admin' : 'office', $form['office'], 'registration_submitted', 'user', $newUserId,
-                "{$form['full_name']} requested {$whatKind} account (username \"{$form['username']}\")");
+            if($insert === null){
+                $error = "That username is already taken. Please choose another.";
+            } else {
+                $newUserId = $conn->insert_id;
 
-            $success = "Registration submitted. An administrator will review your request, and you can sign in once it is approved.";
-            $form = ['full_name' => '', 'username' => '', 'email' => '', 'phone' => '', 'office' => '', 'account_type' => 'user'];
+                $whatKind = $wantsAdmin ? 'an administrator' : "a {$form['office']}";
+                log_audit_event($conn, $form['username'], $wantsAdmin ? 'admin' : 'office', $form['office'], 'registration_submitted', 'user', $newUserId,
+                    "{$form['full_name']} requested {$whatKind} account (username \"{$form['username']}\")");
+
+                $success = "Registration submitted. An administrator will review your request, and you can sign in once it is approved.";
+                $form = ['full_name' => '', 'username' => '', 'email' => '', 'phone' => '', 'office' => '', 'account_type' => 'user'];
+            }
         }
     }
 }

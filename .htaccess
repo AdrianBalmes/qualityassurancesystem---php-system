@@ -1,0 +1,23 @@
+# Keep private files private when the app is served by Apache (XAMPP).
+# router.php does the same job for `php -S`, which ignores this file.
+#
+# Without these rules Apache hands out ems_db.sql (with passwords), .env (with
+# the OneDrive secret), the .git history and every uploaded document to anyone.
+
+Options -Indexes
+
+# Dotfiles and anything that is data or documentation rather than the site.
+# FilesMatch is core Apache, so this holds even if no extra modules load.
+<FilesMatch "(?i)(^\.|\.(sql|md|log|ini|bak|env|json|lock|dist)$|^router\.php$)">
+    Require all denied
+</FilesMatch>
+
+# FilesMatch only sees the file name, so hidden *directories* (.git/, .vscode/)
+# need a path rule. mod_alias ships enabled in XAMPP.
+<IfModule mod_alias.c>
+    RedirectMatch 404 "(?i)/\."
+    RedirectMatch 404 "(?i)\.(sql|md|log|ini|bak|env)$"
+    # Documents go through serve_upload.php / download_document.php. This
+    # repeats uploads/.htaccess so one missing file does not expose them.
+    RedirectMatch 404 "(?i)/uploads/(?!avatars/[^/]+\.(png|jpe?g|gif|webp)$)"
+</IfModule>

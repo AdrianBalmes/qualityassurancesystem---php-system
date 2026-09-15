@@ -1,9 +1,10 @@
 <?php
-session_start();
+require_once __DIR__ . "/session_bootstrap.php";
 require_once __DIR__ . "/database.php";
 require_once __DIR__ . "/page_background.php";
 require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/nav_dropdown.php";
+require_once __DIR__ . "/upload_access.php";
 
 /**
  * The files inside one department's folder in the repository.
@@ -29,17 +30,12 @@ if($office === ''){
     exit();
 }
 
-// An admin opens any department's folder; an office only its own. A browser
-// signed in to several offices may open each of them.
-if(!$isAdmin){
-    $ownOffices = array_keys($_SESSION['office_logins'] ?? []);
-    if(isset($_SESSION['office_name'])){
-        $ownOffices[] = $_SESSION['office_name'];
-    }
-    if(!in_array($office, $ownOffices, true)){
-        http_response_code(403);
-        exit("You are not allowed to view this department's files.");
-    }
+// An admin opens any department's folder; an office only its own. Same rule
+// serve_upload.php applies to each file, so the list never offers a file the
+// viewer would then be refused.
+if(!upload_viewer_can_see_office($office)){
+    http_response_code(403);
+    exit("You are not allowed to view this department's files.");
 }
 
 // LEFT JOIN: a document outlives the recommendation it was filed against, and
@@ -178,7 +174,8 @@ body{margin:0;background:#f4f6f9;color:#26354b;font-family:-apple-system,BlinkMa
                             $displayName = $file['original_name'] !== '' ? $file['original_name'] : $file['file_name'];
                             $safeDisplayName = htmlspecialchars($displayName, ENT_QUOTES);
                             $safeStoredName = htmlspecialchars($file['file_name'], ENT_QUOTES);
-                            $fileUrl = "uploads/" . rawurlencode($file['file_name']);
+                            // uploads/ is not public; files are streamed after an access check.
+                            $fileUrl = "serve_upload.php?id=" . (int) $file['id'];
                             $extension = strtoupper(pathinfo($file['file_name'], PATHINFO_EXTENSION));
 
                             $recText = trim((string) ($file['recommendation'] ?? ''));
@@ -204,7 +201,7 @@ body{margin:0;background:#f4f6f9;color:#26354b;font-family:-apple-system,BlinkMa
                             echo "<td class='nowrap'>{$uploaded}</td>";
                             echo "<td><div class='action-inline'>";
                             echo "<a class='btn-xs btn-view' href='{$fileUrl}' target='_blank' rel='noopener'><i class='bi bi-eye-fill'></i> View</a>";
-                            echo "<a class='btn-xs btn-download' href='{$fileUrl}' download='{$safeDisplayName}'><i class='bi bi-download'></i> Download</a>";
+                            echo "<a class='btn-xs btn-download' href='{$fileUrl}&amp;download=1'><i class='bi bi-download'></i> Download</a>";
                             echo "</div></td>";
                             echo "</tr>";
                         }

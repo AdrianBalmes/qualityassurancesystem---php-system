@@ -20,6 +20,7 @@ const AUDIT_AREAS = [
         'External Relations',
         'Research',
         'Results and Resource Management',
+        'Results',
     ],
 
     // Basic Education's list differs from the College Department's in two

@@ -185,6 +185,38 @@ body{
 }
 .panel-close:hover{background:#dfeafb}
 
+/* the two ways in */
+.choices{display:flex;flex-direction:column;gap:11px;margin-top:4px}
+.choice{
+  display:flex;align-items:center;gap:15px;
+  padding:16px 16px;border-radius:11px;text-decoration:none;
+  border:1px solid #dbe6f5;background:#f8fbff;
+  transition:border-color .15s ease,background .15s ease,transform .15s ease;
+}
+.choice:hover,.choice:focus-visible{transform:translateY(-1px)}
+.choice-icon{
+  width:46px;height:46px;border-radius:11px;flex-shrink:0;
+  display:grid;place-items:center;font-size:21px;color:#fff;
+}
+.choice-text{display:flex;flex-direction:column;gap:3px;min-width:0}
+.choice-text strong{font-size:15.5px;font-weight:700;color:var(--wordmark)}
+.choice-text small{font-size:12.6px;line-height:1.5;color:#5d769f}
+.choice-go{margin-left:auto;color:#9db4d6;font-size:15px;flex-shrink:0}
+
+/* Each route is coloured like the portal it opens: the office login is blue,
+   the admin portal red. */
+.choice-office .choice-icon{background:linear-gradient(135deg,#3b7ad4,#1a5fc4)}
+.choice-office:hover,.choice-office:focus-visible{border-color:#1a5fc4;background:#eff6ff}
+.choice-office:hover .choice-go{color:#1a5fc4}
+.choice-admin .choice-icon{background:linear-gradient(135deg,#d4564f,#b4322c)}
+.choice-admin:hover,.choice-admin:focus-visible{border-color:#c23b36;background:#fff4f3}
+.choice-admin:hover .choice-go{color:#c23b36}
+
+.panel .choice-foot{margin:16px 0 0;font-size:13px;color:#5d769f;text-align:center}
+.choice-foot a{color:var(--royal);font-weight:600}
+
+@media (prefers-reduced-motion:reduce){.choice{transition:none}.choice:hover{transform:none}}
+
 @keyframes crestIn{from{opacity:0;transform:translateY(14px) scale(.93)}to{opacity:1;transform:none}}
 @keyframes riseIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
 
@@ -216,7 +248,7 @@ body{
     </div>
 
     <nav class="topnav">
-      <a class="primary" href="index.php"><i class="bi bi-person-fill"></i> <span>Login</span></a>
+      <a class="primary" href="index.php" data-panel="loginPanel"><i class="bi bi-person-fill"></i> <span>Login</span></a>
       <div class="divider"></div>
       <a href="#contact" data-panel="contactPanel"><i class="bi bi-envelope"></i> <span>Contact Us</span></a>
       <div class="divider"></div>
@@ -249,6 +281,39 @@ body{
     </svg>
   </div>
 </main>
+
+<!-- Which login -->
+<div class="backdrop" id="loginPanel" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+  <div class="panel">
+    <button type="button" class="panel-close" data-close aria-label="Close"><i class="bi bi-x-lg"></i></button>
+    <p class="kicker">Sign in</p>
+    <?php sc_span($siteContent, 'landing.login_title', 'Which account do you use?', 'h2', ''); ?>
+
+    <div class="choices">
+      <a class="choice choice-office" href="index.php">
+        <span class="choice-icon"><i class="bi bi-person-badge-fill"></i></span>
+        <span class="choice-text">
+          <strong>Department Office</strong>
+          <small>See the recommendations assigned to your office and upload your compliance documents.</small>
+        </span>
+        <i class="bi bi-chevron-right choice-go"></i>
+      </a>
+
+      <a class="choice choice-admin" href="admin_login.php">
+        <span class="choice-icon"><i class="bi bi-shield-lock-fill"></i></span>
+        <span class="choice-text">
+          <strong>Administrator</strong>
+          <small>Manage recommendations, accounts, offices and the activity log.</small>
+        </span>
+        <i class="bi bi-chevron-right choice-go"></i>
+      </a>
+    </div>
+
+    <p class="choice-foot">
+      No account yet? <a href="register.php">Request one here</a> — an administrator reviews every request.
+    </p>
+  </div>
+</div>
 
 <!-- Contact -->
 <div class="backdrop" id="contactPanel" role="dialog" aria-modal="true" aria-labelledby="contactTitle">

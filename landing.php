@@ -142,23 +142,14 @@ body{
   animation:riseIn .8s .26s cubic-bezier(.2,.75,.3,1) both;
 }
 
-/* ---------------- loading → enter ---------------- */
+/* ---------------- tagline ---------------- */
 .tagline{
   margin:16px auto 0;max-width:34ch;
   font-size:clamp(13px,1.75vw,17px);font-weight:600;
   letter-spacing:.11em;color:#3f6299;text-wrap:balance;
   animation:riseIn .8s .32s cubic-bezier(.2,.75,.3,1) both;
 }
-.gate{margin-top:clamp(24px,4vh,40px);display:grid;place-items:center}
-.loading{display:grid;place-items:center;gap:13px}
-.spinner{
-  width:46px;height:46px;border-radius:50%;
-  border:4px solid rgba(26,95,196,.22);border-top-color:var(--royal);
-  animation:spin .85s linear infinite;
-}
-.loading span{
-  font-size:13px;font-weight:600;letter-spacing:.24em;text-transform:uppercase;color:#2f5c9c;
-}
+
 /* ---------------- wave ---------------- */
 .wave{position:absolute;left:0;right:0;bottom:-1px;z-index:2;pointer-events:none;line-height:0}
 .wave svg{display:block;width:100%;height:clamp(84px,15vh,168px)}
@@ -194,12 +185,10 @@ body{
 }
 .panel-close:hover{background:#dfeafb}
 
-@keyframes spin{to{transform:rotate(360deg)}}
 @keyframes crestIn{from{opacity:0;transform:translateY(14px) scale(.93)}to{opacity:1;transform:none}}
 @keyframes riseIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
 
 @media (prefers-reduced-motion:reduce){
-  .spinner{animation:none;border-top-color:rgba(26,95,196,.22)}
   .hero-crest,.hero h1,.hero .place,.hero .qa,.tagline{animation:none}
 }
 
@@ -251,13 +240,6 @@ body{
     <?php sc_span($siteContent, 'landing.system', 'Quality Assurance', 'p', 'qa'); ?>
 
     <?php sc_span($siteContent, 'landing.tagline', 'Committed to Quality and Continuous Improvement', 'p', 'tagline'); ?>
-
-    <div class="gate">
-      <div class="loading">
-        <div class="spinner" role="status" aria-label="Loading"></div>
-        <span>Loading…</span>
-      </div>
-    </div>
   </div>
 
   <div class="wave" aria-hidden="true">

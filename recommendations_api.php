@@ -2,6 +2,7 @@
 require_once __DIR__ . "/session_bootstrap.php";
 require_once __DIR__ . "/database.php";
 require_once __DIR__ . "/audit_classification.php";
+require_once __DIR__ . "/audit_areas.php";
 require_once __DIR__ . "/office_directory.php";
 require_once __DIR__ . "/audit_log_helper.php";
 require_once __DIR__ . "/review_columns.php";
@@ -46,15 +47,24 @@ if($action === 'add_office_recommendation'){
         exit();
     }
 
+    // Offices that file by area pass the one being viewed. Anything else, or an
+    // area this office does not use, files as unassigned rather than inventing
+    // a category.
+    $area = trim($_POST['area'] ?? '');
+    if($area !== '' && !audit_area_is_valid($office, $area)){
+        $area = '';
+    }
+
     $auditType = audit_type_for_office($office);
-    $stmt = $conn->prepare("INSERT INTO audit_recommendations (audit_type, office, recommendation, year, status) VALUES (?, ?, '', '', 'Pending')");
-    $stmt->bind_param("ss", $auditType, $office);
+    $stmt = $conn->prepare("INSERT INTO audit_recommendations (audit_type, office, area, recommendation, year, status) VALUES (?, ?, ?, '', '', 'Pending')");
+    $stmt->bind_param("sss", $auditType, $office, $area);
     $stmt->execute();
     $newId = $conn->insert_id;
 
-    log_audit_event($conn, $adminUsername, 'admin', $office, 'recommendation_created', 'recommendation', $newId, "Created a new {$auditType} recommendation row for {$office}");
+    $where = $area !== '' ? "{$office} / {$area}" : $office;
+    log_audit_event($conn, $adminUsername, 'admin', $office, 'recommendation_created', 'recommendation', $newId, "Created a new {$auditType} recommendation row for {$where}");
 
-    echo json_encode(['ok' => true, 'id' => $newId, 'audit_type' => $auditType, 'office' => $office]);
+    echo json_encode(['ok' => true, 'id' => $newId, 'audit_type' => $auditType, 'office' => $office, 'area' => $area]);
     exit();
 }
 

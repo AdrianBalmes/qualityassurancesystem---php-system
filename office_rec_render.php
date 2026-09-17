@@ -1,7 +1,29 @@
 <?php
 
-function fetch_office_recommendations($conn, $selectedOffice, $selectedAudit){
-    if($selectedOffice !== ''){
+require_once __DIR__ . "/audit_areas.php";
+
+/**
+ * $selectedArea narrows an office that files its recommendations by area.
+ * AUDIT_AREA_UNASSIGNED collects the ones with no area set, so they stay
+ * reachable rather than disappearing between the area cards.
+ */
+function fetch_office_recommendations($conn, $selectedOffice, $selectedAudit, $selectedArea = ''){
+    if($selectedOffice !== '' && $selectedArea !== ''){
+        if($selectedArea === AUDIT_AREA_UNASSIGNED){
+            $stmt = $conn->prepare("SELECT * FROM audit_recommendations
+                                     WHERE office = ? AND audit_type = ?
+                                       AND (area IS NULL OR area = '')
+                                  ORDER BY year DESC, id DESC");
+            $stmt->bind_param("ss", $selectedOffice, $selectedAudit);
+        } else {
+            $stmt = $conn->prepare("SELECT * FROM audit_recommendations
+                                     WHERE office = ? AND audit_type = ? AND area = ?
+                                  ORDER BY year DESC, id DESC");
+            $stmt->bind_param("sss", $selectedOffice, $selectedAudit, $selectedArea);
+        }
+        $stmt->execute();
+        $result = $stmt->get_result();
+    } elseif($selectedOffice !== ''){
         $stmt = $conn->prepare("SELECT * FROM audit_recommendations WHERE office = ? AND audit_type = ? ORDER BY year DESC, id DESC");
         $stmt->bind_param("ss", $selectedOffice, $selectedAudit);
         $stmt->execute();
@@ -93,6 +115,37 @@ function render_office_recommendation_rows($rows, $selectedOffice, $selectedAudi
         $html = "<tr><td colspan='7' class='empty-state'>" . htmlspecialchars($emptyMessage, ENT_QUOTES) . "</td></tr>";
     }
     return ['html' => $html, 'count' => $count];
+}
+
+/**
+ * The area cards an office-with-areas shows instead of a recommendation list.
+ *
+ * They live inside one full-width table cell so the dashboard can swap them in
+ * and out of the existing grid without rebuilding the table around them.
+ */
+function render_area_cards($conn, $office, $auditType){
+    $counts = audit_area_counts($conn, $office, $auditType);
+    $safeOffice = htmlspecialchars($office, ENT_QUOTES);
+
+    $cards = "";
+    foreach($counts as $area => $tally){
+        $safeArea = htmlspecialchars($area, ENT_QUOTES);
+        $total = (int) $tally['total'];
+        $pending = (int) $tally['pending'];
+        $unassigned = $area === AUDIT_AREA_UNASSIGNED ? ' area-card-unassigned' : '';
+
+        $tally = $total === 0
+            ? "<span class='area-empty'>No recommendations yet</span>"
+            : "<span class='area-total'>{$total} recommendation" . ($total === 1 ? '' : 's') . "</span>"
+              . ($pending > 0 ? "<span class='area-pending'>{$pending} pending</span>" : "");
+
+        $cards .= "<button type='button' class='area-card{$unassigned}' data-area='{$safeArea}' data-office='{$safeOffice}'>"
+                . "<span class='area-name'>{$safeArea}</span>"
+                . "<span class='area-tally'>{$tally}</span>"
+                . "</button>";
+    }
+
+    return "<tr><td colspan='7' class='area-cell'><div class='area-grid'>{$cards}</div></td></tr>";
 }
 
 /** Heading for the recommendations grid. An empty office means every office. */

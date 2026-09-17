@@ -39,5 +39,13 @@ if(!$allowed){
     exit("Not found.\n");
 }
 
+// "/" is the public front door, not the login form. The built-in server would
+// otherwise reach for index.php; Apache is told the same thing by the
+// DirectoryIndex line in .htaccess, so both servers agree on the entry point.
+if($path === '/'){
+    require __DIR__ . '/landing.php';
+    return true;
+}
+
 // Let the built-in server run the page or send the file as it normally would.
 return false;

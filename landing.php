@@ -143,7 +143,13 @@ body{
 }
 
 /* ---------------- loading → enter ---------------- */
-.gate{margin-top:clamp(26px,4.5vh,44px);min-height:104px;display:grid;place-items:center}
+.tagline{
+  margin:16px auto 0;max-width:34ch;
+  font-size:clamp(13px,1.75vw,17px);font-weight:600;
+  letter-spacing:.11em;color:#3f6299;text-wrap:balance;
+  animation:riseIn .8s .32s cubic-bezier(.2,.75,.3,1) both;
+}
+.gate{margin-top:clamp(24px,4vh,40px);display:grid;place-items:center}
 .loading{display:grid;place-items:center;gap:13px}
 .spinner{
   width:46px;height:46px;border-radius:50%;
@@ -153,22 +159,6 @@ body{
 .loading span{
   font-size:13px;font-weight:600;letter-spacing:.24em;text-transform:uppercase;color:#2f5c9c;
 }
-.enter{display:none;flex-direction:column;align-items:center;gap:11px}
-.enter.show{display:flex;animation:riseIn .5s cubic-bezier(.2,.75,.3,1) both}
-.loading.hide{display:none}
-.enter-btn{
-  display:inline-flex;align-items:center;gap:11px;
-  background:linear-gradient(100deg,var(--royal),var(--navy));
-  color:#fff;text-decoration:none;font-weight:700;font-size:16px;
-  padding:15px 38px;border-radius:999px;
-  box-shadow:0 12px 30px rgba(15,63,150,.34);
-  transition:transform .16s ease,box-shadow .16s ease;
-}
-.enter-btn:hover,.enter-btn:focus-visible{
-  transform:translateY(-2px);box-shadow:0 16px 38px rgba(15,63,150,.42);color:#fff;
-}
-.enter small{color:var(--muted);font-size:12.5px}
-
 /* ---------------- wave ---------------- */
 .wave{position:absolute;left:0;right:0;bottom:-1px;z-index:2;pointer-events:none;line-height:0}
 .wave svg{display:block;width:100%;height:clamp(84px,15vh,168px)}
@@ -210,8 +200,7 @@ body{
 
 @media (prefers-reduced-motion:reduce){
   .spinner{animation:none;border-top-color:rgba(26,95,196,.22)}
-  .hero-crest,.hero h1,.hero .place,.hero .qa,.enter.show{animation:none}
-  .enter-btn{transition:none}
+  .hero-crest,.hero h1,.hero .place,.hero .qa,.tagline{animation:none}
 }
 
 @media (max-width:760px){
@@ -261,15 +250,12 @@ body{
 
     <?php sc_span($siteContent, 'landing.system', 'Quality Assurance', 'p', 'qa'); ?>
 
+    <?php sc_span($siteContent, 'landing.tagline', 'Committed to Quality and Continuous Improvement', 'p', 'tagline'); ?>
+
     <div class="gate">
-      <div class="loading" id="loadingState">
+      <div class="loading">
         <div class="spinner" role="status" aria-label="Loading"></div>
         <span>Loading…</span>
-      </div>
-
-      <div class="enter" id="enterState">
-        <a class="enter-btn" href="index.php"><i class="bi bi-box-arrow-in-right"></i> Enter the System</a>
-        <small>Sign in with your department account</small>
       </div>
     </div>
   </div>
@@ -308,21 +294,6 @@ body{
 
 <script>
 (function(){
-  // An honest loading screen: it resolves rather than spinning forever. The
-  // header Login link works throughout, so nobody is ever made to wait.
-  var loading = document.getElementById('loadingState');
-  var enter   = document.getElementById('enterState');
-  var settle  = function(){
-    loading.classList.add('hide');
-    enter.classList.add('show');
-  };
-  var delay = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 1600;
-  if(document.readyState === 'complete'){
-    setTimeout(settle, delay);
-  } else {
-    window.addEventListener('load', function(){ setTimeout(settle, delay); });
-  }
-
   // Contact / About open in place, so neither is a link to a page that does
   // not exist yet.
   function open(panel){ panel.classList.add('open'); panel.querySelector('[data-close]').focus(); }

@@ -38,6 +38,12 @@ if(!in_array($selectedOffice, $officeNamesForAudit, true)){
     $selectedOffice = '';
 }
 
+// External has no All Offices tile, so there is no tile to represent an empty
+// selection. Open the first office instead of a list nothing is pointing at.
+if($selectedAudit === 'External' && $selectedOffice === '' && !empty($officeNamesForAudit)){
+    $selectedOffice = $officeNamesForAudit[0];
+}
+
 $auditTotalCount = 0;
 $auditPendingCount = 0;
 $auditSubmittedCount = 0;
@@ -124,7 +130,11 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
     <div class="office-tabs">
         <button type="button" class="office-slide-btn" data-slide-office="-1" aria-label="Slide offices left"><i class="bi bi-chevron-left"></i></button>
         <div class="office-scroll" id="officeTabs">
+            <?php /* External audit has only two offices, each opening its own
+                     areas, so an All Offices tile mixing them adds nothing. */ ?>
+            <?php if($selectedAudit !== 'External'): ?>
             <a class="office-tile<?php echo $selectedOffice === '' ? ' active' : ''; ?>" data-office="" href="home.php?audit=<?php echo urlencode($selectedAudit); ?>#audit-recommendations"><div class="office-icon"><i class="bi bi-grid-fill"></i></div><span>All Offices</span></a>
+            <?php endif; ?>
             <?php foreach($officeNamesForAudit as $officeName):
                 $officeLabel = htmlspecialchars($officeName, ENT_QUOTES);
                 $officeUrl = urlencode($officeName);

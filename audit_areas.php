@@ -21,6 +21,21 @@ const AUDIT_AREAS = [
         'Research',
         'Results and Resource Management',
     ],
+
+    // Basic Education's list differs from the College Department's in two
+    // places -- "Teaching Learning" rather than "Teaching and Learning", and
+    // "Results" rather than "Results and Resource Management" -- so the two are
+    // kept separate rather than shared.
+    'BED' => [
+        'Leadership and Governance',
+        'Quality Assurance',
+        'Resource Management',
+        'Teaching Learning',
+        'Student Services',
+        'External Relations',
+        'Research',
+        'Results',
+    ],
 ];
 
 /** Shown for recommendations filed before an area was picked for them. */

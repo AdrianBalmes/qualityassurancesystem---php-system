@@ -73,22 +73,41 @@ foreach($officeNamesForAudit as $officeName){
     $recOfficeCounts[] = $recCountsByOffice[$officeName] ?? 0;
 }
 
-// An office that files by area shows its areas until one is picked.
+// A programmed office steps through programmes, then that programme's areas,
+// then the recommendations. An office without programmes skips the first step.
+$selectedProgram = isset($_GET['program']) ? trim($_GET['program']) : '';
+if($selectedProgram !== '' && !audit_program_is_valid($selectedOffice, $selectedProgram)){
+    $selectedProgram = '';
+}
+
 $selectedArea = isset($_GET['area']) ? trim($_GET['area']) : '';
-if($selectedArea !== '' && $selectedArea !== AUDIT_AREA_UNASSIGNED && !audit_area_is_valid($selectedOffice, $selectedArea)){
+if($selectedArea !== '' && $selectedArea !== AUDIT_AREA_UNASSIGNED
+   && !audit_area_is_valid($selectedOffice, $selectedArea, $selectedProgram)){
     $selectedArea = '';
 }
-$showingAreas = office_has_areas($selectedOffice) && $selectedArea === '';
+
+$showingPrograms = office_has_programs($selectedOffice) && $selectedProgram === '';
+$showingAreas = !$showingPrograms && office_has_areas($selectedOffice) && $selectedArea === '';
 
 // An empty $selectedOffice is the "All Offices" tab; the fetch helper returns
 // every office for this audit type in that case.
-$auditRecommendations = $showingAreas
+$auditRecommendations = ($showingPrograms || $showingAreas)
     ? []
-    : fetch_office_recommendations($conn, $selectedOffice, $selectedAudit, $selectedArea);
+    : fetch_office_recommendations($conn, $selectedOffice, $selectedAudit, $selectedArea, $selectedProgram);
 
-$auditGridTitle = $showingAreas
-    ? $selectedOffice . ' — Areas'
-    : ($selectedArea !== '' ? $selectedOffice . ' — ' . $selectedArea : office_recommendations_title($selectedOffice));
+if($showingPrograms){
+    $auditGridTitle = $selectedOffice . ' — Programs';
+} elseif($showingAreas){
+    $auditGridTitle = ($selectedProgram !== '' ? $selectedProgram : $selectedOffice) . ' — Areas';
+} elseif($selectedArea !== ''){
+    $auditGridTitle = ($selectedProgram !== '' ? $selectedProgram : $selectedOffice) . ' — ' . $selectedArea;
+} else {
+    $auditGridTitle = office_recommendations_title($selectedOffice);
+}
+
+// Back steps one level: from an area to its programme's areas, from a
+// programme's areas to the programmes.
+$showBackButton = $selectedArea !== '' || $selectedProgram !== '';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -110,6 +129,37 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
 .area-pending{font-size:11.5px;font-weight:800;color:#806119;background:#fff0ba;border-radius:999px;padding:3px 9px}
 .area-empty{font-size:12px;font-weight:700;color:#9aa8bf}
 .area-card-unassigned{border-style:dashed}
+/* Programme cards: one row of folders, each in its programme's colour. */
+.prog-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(272px,1fr));gap:14px}
+.prog-card{display:flex;align-items:center;gap:14px;text-align:left;border:1px solid #dbe3ef;background:#fff;border-radius:9px;padding:16px 16px;cursor:pointer;transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease}
+.prog-card:hover{box-shadow:0 8px 22px rgba(44,74,119,.15);transform:translateY(-1px)}
+.prog-icon{width:46px;height:46px;border-radius:10px;flex-shrink:0;display:grid;place-items:center;font-size:21px;color:#fff}
+.prog-body{display:flex;flex-direction:column;gap:6px;min-width:0;flex:1}
+.prog-name{font-size:14.5px;font-weight:800;color:#26354b;line-height:1.3}
+.prog-areas{font-size:11.5px;font-weight:800;border-radius:999px;padding:3px 9px}
+.prog-go{margin-left:auto;color:#a9bad6;font-size:15px;flex-shrink:0}
+/* Blue is the dashboard's existing accent; pink and purple mark the two
+   programmes that asked for their own. */
+.prog-blue .prog-icon{background:linear-gradient(135deg,#3b7ad4,#2459a6)}
+.prog-blue .prog-areas{background:#e6eefb;color:#2e5fa3}
+.prog-blue:hover{border-color:#316fc4}
+.prog-pink .prog-icon{background:linear-gradient(135deg,#ef7ba8,#d9457f)}
+.prog-pink .prog-areas{background:#fde7f0;color:#b93a6e}
+.prog-pink:hover{border-color:#d9457f}
+.prog-purple .prog-icon{background:linear-gradient(135deg,#9b7ae0,#6f42c1)}
+.prog-purple .prog-areas{background:#efe9fb;color:#5b3fa0}
+.prog-purple:hover{border-color:#6f42c1}
+.prog-steel .prog-icon{background:linear-gradient(135deg,#8fa3c0,#5b7091)}
+.prog-steel .prog-areas{background:#e4e9f1;color:#4c5a72}
+/* Area cards inherit the colour of the programme they belong to. */
+.area-pink{border-left:3px solid #d9457f}
+.area-pink:hover{border-color:#d9457f;border-left-color:#d9457f}
+.area-pink .area-total{background:#fde7f0;color:#b93a6e}
+.area-purple{border-left:3px solid #6f42c1}
+.area-purple:hover{border-color:#6f42c1;border-left-color:#6f42c1}
+.area-purple .area-total{background:#efe9fb;color:#5b3fa0}
+.area-blue{border-left:3px solid #316fc4}
+@media(prefers-reduced-motion:reduce){.prog-card{transition:none}.prog-card:hover{transform:none}}
 .back-areas-btn{min-height:32px;border:1px solid #c8d4e7;border-radius:5px;background:#fff;color:#2e67b8;font-weight:800;font-size:12.5px;padding:6px 12px;display:inline-flex;align-items:center;gap:6px;cursor:pointer}
 .back-areas-btn:hover{background:#eef4ff}
 @media(prefers-reduced-motion:reduce){.area-card{transition:none}.area-card:hover{transform:none}}
@@ -165,10 +215,10 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
     </div>
     <div class="grid-head">
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-            <button type="button" id="backToAreasBtn" class="back-areas-btn" <?php echo $selectedArea === '' ? 'style="display:none"' : ''; ?>><i class="bi bi-arrow-left"></i> All Areas</button>
+            <button type="button" id="backToAreasBtn" class="back-areas-btn" <?php echo $showBackButton ? '' : 'style="display:none"'; ?>><i class="bi bi-arrow-left"></i> Back</button>
             <h3 class="panel-title" id="auditRecTitle" style="font-size:15px;border-bottom:0;padding-bottom:0;margin-bottom:0"><?php echo htmlspecialchars($auditGridTitle, ENT_QUOTES); ?></h3>
         </div>
-        <button type="button" id="addRowBtn" class="add-row-btn" <?php echo ($selectedOffice === '' || $showingAreas) ? 'style="display:none"' : ''; ?>><i class="bi bi-plus-lg"></i> Add Row</button>
+        <button type="button" id="addRowBtn" class="add-row-btn" <?php echo ($selectedOffice === '' || $showingAreas || $showingPrograms) ? 'style="display:none"' : ''; ?>><i class="bi bi-plus-lg"></i> Add Row</button>
     </div>
     <div class="grid-wrap">
         <table class="grid-table" id="recGrid">
@@ -185,8 +235,10 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
             </thead>
             <tbody id="auditRecTbody">
                 <?php
-                if($showingAreas){
-                    echo render_area_cards($conn, $selectedOffice, $selectedAudit);
+                if($showingPrograms){
+                    echo render_program_cards($conn, $selectedOffice, $selectedAudit);
+                } elseif($showingAreas){
+                    echo render_area_cards($conn, $selectedOffice, $selectedAudit, $selectedProgram);
                 } else {
                     $auditRecIds = array_map(function($row){ return (int) $row['id']; }, $auditRecommendations);
                     $auditDocsByRecommendation = fetch_recommendation_documents_map($conn, $auditRecIds);
@@ -488,6 +540,7 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
     var selectedAudit = <?php echo json_encode($selectedAudit); ?>;
     var currentOffice = <?php echo json_encode($selectedOffice); ?>;
     var currentArea = <?php echo json_encode($selectedArea); ?>;
+    var currentProgram = <?php echo json_encode($selectedProgram); ?>;
     var officeTabs = document.getElementById('officeTabs');
     var auditTbody = document.getElementById('auditRecTbody');
     var auditTitle = document.getElementById('auditRecTitle');
@@ -626,6 +679,7 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
                 // Filed under the area currently open, so it appears in the
                 // right card rather than falling into Unassigned.
                 body: 'action=add_office_recommendation&office=' + encodeURIComponent(currentOffice)
+                    + (currentProgram ? '&program=' + encodeURIComponent(currentProgram) : '')
                     + (currentArea ? '&area=' + encodeURIComponent(currentArea) : '')
             }).then(function(res){ return res.json(); }).then(function(data){
                 if(!data.ok){ alert(data.error || 'Could not add a new row.'); return; }
@@ -640,11 +694,12 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
 
     // One loader for all three ways of moving around: picking an office tile,
     // opening an area card, and stepping back out to the areas.
-    function loadGrid(office, area){
+    function loadGrid(office, program, area){
         auditTbody.innerHTML = "<tr><td colspan='7' class='empty-state'>Loading&hellip;</td></tr>";
 
         var params = new URLSearchParams({audit: selectedAudit});
         if(office !== ''){ params.set('office', office); }
+        if(program !== ''){ params.set('program', program); }
         if(area !== ''){ params.set('area', area); }
 
         fetch('office_recommendations_view.php?' + params.toString())
@@ -652,21 +707,25 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
             .then(function(data){
                 if(!data.ok){ return; }
                 currentOffice = data.office;
+                currentProgram = data.program || '';
                 currentArea = data.area || '';
                 auditTbody.innerHTML = data.html;
                 auditTitle.textContent = data.title;
 
                 // Add Row needs somewhere to file the recommendation: not on
-                // "All Offices", and not while the areas themselves are listed.
+                // "All Offices", and not while programmes or areas are listed.
                 if(addRowBtn){
-                    addRowBtn.style.display = (currentOffice === '' || data.view === 'areas') ? 'none' : '';
+                    addRowBtn.style.display =
+                        (currentOffice === '' || data.view === 'areas' || data.view === 'programs') ? 'none' : '';
                 }
+                // Back appears from the moment there is a level to step back to.
                 if(backBtn){
-                    backBtn.style.display = currentArea === '' ? 'none' : '';
+                    backBtn.style.display = (currentArea === '' && currentProgram === '') ? 'none' : '';
                 }
 
                 var newUrl = 'home.php?audit=' + encodeURIComponent(selectedAudit)
                     + (currentOffice !== '' ? '&office=' + encodeURIComponent(currentOffice) : '')
+                    + (currentProgram !== '' ? '&program=' + encodeURIComponent(currentProgram) : '')
                     + (currentArea !== '' ? '&area=' + encodeURIComponent(currentArea) : '')
                     + '#audit-recommendations';
                 window.history.replaceState(null, '', newUrl);
@@ -686,19 +745,37 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
         tile.classList.add('active');
 
         // Switching office always starts at that office's top level.
-        loadGrid(office, '');
+        loadGrid(office, '', '');
     });
 
-    // The area cards are replaced wholesale on every load, so listen on the
-    // table body rather than binding each card.
+    // Cards are replaced wholesale on every load, so listen on the table body
+    // rather than binding each one.
     auditTbody.addEventListener('click', function(e){
-        var card = e.target.closest('.area-card');
-        if(!card){ return; }
-        loadGrid(card.getAttribute('data-office') || currentOffice, card.getAttribute('data-area') || '');
+        var program = e.target.closest('.prog-card');
+        if(program){
+            loadGrid(program.getAttribute('data-office') || currentOffice,
+                     program.getAttribute('data-program') || '', '');
+            return;
+        }
+
+        var area = e.target.closest('.area-card');
+        if(area){
+            loadGrid(area.getAttribute('data-office') || currentOffice,
+                     area.getAttribute('data-program') || currentProgram,
+                     area.getAttribute('data-area') || '');
+        }
     });
 
     if(backBtn){
-        backBtn.addEventListener('click', function(){ loadGrid(currentOffice, ''); });
+        backBtn.addEventListener('click', function(){
+            // One level at a time: an area returns to its programme's areas,
+            // a programme returns to the programme cards.
+            if(currentArea !== ''){
+                loadGrid(currentOffice, currentProgram, '');
+            } else {
+                loadGrid(currentOffice, '', '');
+            }
+        });
     }
 })();
 </script>

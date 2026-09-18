@@ -73,6 +73,7 @@ if($statusType !== null && stripos($statusType, 'enum(') === 0){
 // External audit of some offices is organised by accreditation area; see
 // audit_areas.php. Blank means the recommendation has not been filed under one.
 ensure_column($conn, 'audit_recommendations', 'area', "varchar(120) NOT NULL DEFAULT ''", $changes);
+ensure_column($conn, 'audit_recommendations', 'program', "varchar(120) NOT NULL DEFAULT ''", $changes);
 
 // Offices moved from a hardcoded array into a table; seed it so a fresh
 // checkout has the same department list as before.

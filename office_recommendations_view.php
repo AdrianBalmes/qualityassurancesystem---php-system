@@ -25,28 +25,51 @@ if($selectedOffice !== '' && audit_type_for_office($selectedOffice) !== $selecte
     $selectedOffice = '';
 }
 
+$selectedProgram = isset($_GET['program']) ? trim($_GET['program']) : '';
+if($selectedProgram !== '' && !audit_program_is_valid($selectedOffice, $selectedProgram)){
+    $selectedProgram = '';
+}
+
 $selectedArea = isset($_GET['area']) ? trim($_GET['area']) : '';
-if($selectedArea !== '' && $selectedArea !== AUDIT_AREA_UNASSIGNED && !audit_area_is_valid($selectedOffice, $selectedArea)){
+if($selectedArea !== '' && $selectedArea !== AUDIT_AREA_UNASSIGNED
+   && !audit_area_is_valid($selectedOffice, $selectedArea, $selectedProgram)){
     $selectedArea = '';
 }
 
-// An office that files by area shows its areas until one is picked. Everything
-// else, including the "All Offices" tab, lists recommendations directly.
-if(office_has_areas($selectedOffice) && $selectedArea === ''){
+// Three steps for a programmed office -- programmes, then that programme's
+// areas, then the recommendations. Offices without programmes skip the first.
+if(office_has_programs($selectedOffice) && $selectedProgram === ''){
     echo json_encode([
         'ok' => true,
         'office' => $selectedOffice,
         'audit' => $selectedAudit,
+        'program' => '',
         'area' => '',
-        'view' => 'areas',
-        'title' => $selectedOffice . ' — Areas',
-        'html' => render_area_cards($conn, $selectedOffice, $selectedAudit),
+        'view' => 'programs',
+        'title' => $selectedOffice . ' — Programs',
+        'html' => render_program_cards($conn, $selectedOffice, $selectedAudit),
         'count' => 0,
     ]);
     exit();
 }
 
-$recommendations = fetch_office_recommendations($conn, $selectedOffice, $selectedAudit, $selectedArea);
+if(office_has_areas($selectedOffice) && $selectedArea === ''){
+    echo json_encode([
+        'ok' => true,
+        'office' => $selectedOffice,
+        'audit' => $selectedAudit,
+        'program' => $selectedProgram,
+        'area' => '',
+        'view' => 'areas',
+        'accent' => $selectedProgram !== '' ? audit_program_accent($selectedOffice, $selectedProgram) : 'blue',
+        'title' => ($selectedProgram !== '' ? $selectedProgram : $selectedOffice) . ' — Areas',
+        'html' => render_area_cards($conn, $selectedOffice, $selectedAudit, $selectedProgram),
+        'count' => 0,
+    ]);
+    exit();
+}
+
+$recommendations = fetch_office_recommendations($conn, $selectedOffice, $selectedAudit, $selectedArea, $selectedProgram);
 $recIds = array_map(function($row){ return (int) $row['id']; }, $recommendations);
 $docsByRecommendation = fetch_recommendation_documents_map($conn, $recIds);
 $rendered = render_office_recommendation_rows($recommendations, $selectedOffice, $selectedAudit, $docsByRecommendation);
@@ -55,10 +78,11 @@ echo json_encode([
     'ok' => true,
     'office' => $selectedOffice,
     'audit' => $selectedAudit,
+    'program' => $selectedProgram,
     'area' => $selectedArea,
     'view' => 'rows',
     'title' => $selectedArea !== ''
-        ? $selectedOffice . ' — ' . $selectedArea
+        ? ($selectedProgram !== '' ? $selectedProgram : $selectedOffice) . ' — ' . $selectedArea
         : office_recommendations_title($selectedOffice),
     'html' => $rendered['html'],
     'count' => $rendered['count'],

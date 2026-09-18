@@ -47,24 +47,29 @@ if($action === 'add_office_recommendation'){
         exit();
     }
 
-    // Offices that file by area pass the one being viewed. Anything else, or an
-    // area this office does not use, files as unassigned rather than inventing
-    // a category.
+    // Offices that file by programme and area pass whichever is open. Anything
+    // this office does not actually use is dropped rather than stored, so the
+    // columns cannot fill up with invented categories.
+    $program = trim($_POST['program'] ?? '');
+    if($program !== '' && !audit_program_is_valid($office, $program)){
+        $program = '';
+    }
+
     $area = trim($_POST['area'] ?? '');
-    if($area !== '' && !audit_area_is_valid($office, $area)){
+    if($area !== '' && !audit_area_is_valid($office, $area, $program)){
         $area = '';
     }
 
     $auditType = audit_type_for_office($office);
-    $stmt = $conn->prepare("INSERT INTO audit_recommendations (audit_type, office, area, recommendation, year, status) VALUES (?, ?, ?, '', '', 'Pending')");
-    $stmt->bind_param("sss", $auditType, $office, $area);
+    $stmt = $conn->prepare("INSERT INTO audit_recommendations (audit_type, office, program, area, recommendation, year, status) VALUES (?, ?, ?, ?, '', '', 'Pending')");
+    $stmt->bind_param("ssss", $auditType, $office, $program, $area);
     $stmt->execute();
     $newId = $conn->insert_id;
 
-    $where = $area !== '' ? "{$office} / {$area}" : $office;
+    $where = implode(' / ', array_filter([$office, $program, $area]));
     log_audit_event($conn, $adminUsername, 'admin', $office, 'recommendation_created', 'recommendation', $newId, "Created a new {$auditType} recommendation row for {$where}");
 
-    echo json_encode(['ok' => true, 'id' => $newId, 'audit_type' => $auditType, 'office' => $office, 'area' => $area]);
+    echo json_encode(['ok' => true, 'id' => $newId, 'audit_type' => $auditType, 'office' => $office, 'program' => $program, 'area' => $area]);
     exit();
 }
 

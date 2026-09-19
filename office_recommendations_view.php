@@ -3,7 +3,7 @@ require_once __DIR__ . "/session_bootstrap.php";
 require_once __DIR__ . "/database.php";
 require_once __DIR__ . "/audit_classification.php";
 require_once __DIR__ . "/audit_areas.php";
-require_once __DIR__ . "/office_rec_render.php";
+require_once __DIR__ . "/recommendation_view_rows.php";
 require_once __DIR__ . "/review_columns.php";
 header('Content-Type: application/json');
 

@@ -27,6 +27,24 @@ function ensure_review_columns($conn){
         }
     }
 
+    // College Department reviews one submitted document at a time, so each
+    // document carries its own decision and remarks.
+    $docTable = mysqli_query($conn, "SHOW TABLES LIKE 'recommendation_documents'");
+    if($docTable && $docTable->num_rows > 0){
+        $docColumns = [
+            'review_status'  => "varchar(20) DEFAULT NULL",
+            'review_remarks' => "text",
+            'reviewed_by'    => "varchar(50) DEFAULT NULL",
+            'reviewed_at'    => "datetime DEFAULT NULL",
+        ];
+        foreach($docColumns as $column => $definition){
+            $result = mysqli_query($conn, "SHOW COLUMNS FROM recommendation_documents LIKE '{$column}'");
+            if($result && $result->num_rows === 0){
+                mysqli_query($conn, "ALTER TABLE recommendation_documents ADD COLUMN `{$column}` {$definition}");
+            }
+        }
+    }
+
     $columnResult = mysqli_query($conn, "SHOW COLUMNS FROM audit_recommendations LIKE 'status'");
     if($columnResult){
         $columnInfo = $columnResult->fetch_assoc();

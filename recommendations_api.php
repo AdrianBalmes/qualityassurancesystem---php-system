@@ -2,6 +2,7 @@
 require_once __DIR__ . "/session_bootstrap.php";
 require_once __DIR__ . "/database.php";
 require_once __DIR__ . "/audit_classification.php";
+require_once __DIR__ . "/audit_areas.php";
 require_once __DIR__ . "/office_directory.php";
 require_once __DIR__ . "/audit_log_helper.php";
 require_once __DIR__ . "/review_columns.php";
@@ -46,15 +47,29 @@ if($action === 'add_office_recommendation'){
         exit();
     }
 
+    // Offices that file by programme and area pass whichever is open. Anything
+    // this office does not actually use is dropped rather than stored, so the
+    // columns cannot fill up with invented categories.
+    $program = trim($_POST['program'] ?? '');
+    if($program !== '' && !audit_program_is_valid($office, $program)){
+        $program = '';
+    }
+
+    $area = trim($_POST['area'] ?? '');
+    if($area !== '' && !audit_area_is_valid($office, $area, $program)){
+        $area = '';
+    }
+
     $auditType = audit_type_for_office($office);
-    $stmt = $conn->prepare("INSERT INTO audit_recommendations (audit_type, office, recommendation, year, status) VALUES (?, ?, '', '', 'Pending')");
-    $stmt->bind_param("ss", $auditType, $office);
+    $stmt = $conn->prepare("INSERT INTO audit_recommendations (audit_type, office, program, area, recommendation, year, status) VALUES (?, ?, ?, ?, '', '', 'Pending')");
+    $stmt->bind_param("ssss", $auditType, $office, $program, $area);
     $stmt->execute();
     $newId = $conn->insert_id;
 
-    log_audit_event($conn, $adminUsername, 'admin', $office, 'recommendation_created', 'recommendation', $newId, "Created a new {$auditType} recommendation row for {$office}");
+    $where = implode(' / ', array_filter([$office, $program, $area]));
+    log_audit_event($conn, $adminUsername, 'admin', $office, 'recommendation_created', 'recommendation', $newId, "Created a new {$auditType} recommendation row for {$where}");
 
-    echo json_encode(['ok' => true, 'id' => $newId, 'audit_type' => $auditType, 'office' => $office]);
+    echo json_encode(['ok' => true, 'id' => $newId, 'audit_type' => $auditType, 'office' => $office, 'program' => $program, 'area' => $area]);
     exit();
 }
 
@@ -62,8 +77,26 @@ if($action === 'save_office_recommendation'){
     $id = intval($_POST['id'] ?? 0);
     $recommendation = trim($_POST['recommendation'] ?? '');
     $status = trim($_POST['status'] ?? '');
-    $remarks = trim($_POST['remarks'] ?? '');
     $year = trim($_POST['year'] ?? '');
+
+    // Only present when the grid rendered remarks as a single editable cell.
+    // A recommendation with more than one office's remarks renders them
+    // read-only instead, and must not be overwritten by an empty save here.
+    $remarksProvided = array_key_exists('remarks', $_POST);
+    $remarks = trim($_POST['remarks'] ?? '');
+
+    // Sent as a JSON array of office/person names; anything malformed or not a
+    // plain string is dropped rather than rejecting the whole save.
+    $inChargeRaw = json_decode($_POST['in_charge'] ?? '', true);
+    $inChargeList = [];
+    if(is_array($inChargeRaw)){
+        foreach($inChargeRaw as $entry){
+            if(is_string($entry) && trim($entry) !== '' && mb_strlen($entry) <= 100){
+                $inChargeList[] = trim($entry);
+            }
+        }
+    }
+    $inCharge = json_encode(array_slice(array_values(array_unique($inChargeList)), 0, 20));
 
     if($id <= 0){
         http_response_code(400);
@@ -86,8 +119,19 @@ if($action === 'save_office_recommendation'){
     $beforeStmt->execute();
     $beforeRow = $beforeStmt->get_result()->fetch_assoc();
 
-    $stmt = $conn->prepare("UPDATE audit_recommendations SET recommendation = ?, status = ?, remarks = ?, year = ? WHERE id = ?");
-    $stmt->bind_param("ssssi", $recommendation, $status, $remarks, $year, $id);
+    // In Charge is an External Audit feature only; an Internal Audit office's
+    // row never carries one, regardless of what the request sent.
+    if($beforeRow && audit_type_for_office($beforeRow['office']) !== 'External'){
+        $inCharge = json_encode([]);
+    }
+
+    if($remarksProvided){
+        $stmt = $conn->prepare("UPDATE audit_recommendations SET recommendation = ?, status = ?, remarks = ?, year = ?, in_charge = ? WHERE id = ?");
+        $stmt->bind_param("sssssi", $recommendation, $status, $remarks, $year, $inCharge, $id);
+    } else {
+        $stmt = $conn->prepare("UPDATE audit_recommendations SET recommendation = ?, status = ?, year = ?, in_charge = ? WHERE id = ?");
+        $stmt->bind_param("ssssi", $recommendation, $status, $year, $inCharge, $id);
+    }
     $stmt->execute();
 
     if($beforeRow){
@@ -206,6 +250,30 @@ if($action === 'review_recommendation'){
         exit();
     }
 
+    // College Department reviews one submitted document at a time: the decision
+    // is recorded against the chosen document. Marking the whole
+    // recommendation Completed is the one action that needs no document.
+    $reviewedDoc = null;
+    if($beforeRow['office'] === 'College Department' && $decision !== 'completed'){
+        $docId = intval($_POST['doc_id'] ?? 0);
+        $docStmt = $conn->prepare("SELECT id, original_name FROM recommendation_documents WHERE id = ? AND recommendation_id = ? LIMIT 1");
+        $docStmt->bind_param("ii", $docId, $id);
+        $docStmt->execute();
+        $reviewedDoc = $docStmt->get_result()->fetch_assoc();
+        if(!$reviewedDoc){
+            http_response_code(400);
+            echo json_encode(['ok' => false, 'error' => 'Choose one submitted document to review.']);
+            exit();
+        }
+
+        $docReviewStatus = $decisionStatusMap[$decision] ?? 'Remarks only';
+        $docUpdate = $conn->prepare("UPDATE recommendation_documents SET review_status = ?, review_remarks = ?, reviewed_by = ?, reviewed_at = NOW() WHERE id = ?");
+        $docUpdate->bind_param("sssi", $docReviewStatus, $reviewRemarks, $adminUsername, $docId);
+        $docUpdate->execute();
+        // Choosing a file only says which submission the feedback is about.
+        // The office receives the feedback text alone, never the document.
+    }
+
     $newStatus = $decisionStatusMap[$decision];
     if($newStatus !== null){
         $stmt = $conn->prepare("UPDATE audit_recommendations SET status = ?, review_remarks = ?, reviewed_by = ?, reviewed_at = NOW() WHERE id = ?");
@@ -226,9 +294,10 @@ if($action === 'review_recommendation'){
     ];
     $verb = $decisionVerbs[$decision] ?? 'reviewed';
     $statusChangeNote = $beforeRow['status'] !== $newStatus ? " (status: {$beforeRow['status']} \xe2\x86\x92 {$newStatus})" : "";
-    log_audit_event($conn, $adminUsername, 'admin', $beforeRow['office'], 'recommendation_reviewed', 'recommendation', $id, "Admin {$verb} recommendation for {$beforeRow['office']}{$statusChangeNote}");
+    $docNote = $reviewedDoc ? " (document: {$reviewedDoc['original_name']})" : "";
+    log_audit_event($conn, $adminUsername, 'admin', $beforeRow['office'], 'recommendation_reviewed', 'recommendation', $id, "Admin {$verb} recommendation for {$beforeRow['office']}{$docNote}{$statusChangeNote}");
 
-    echo json_encode(['ok' => true, 'status' => $newStatus, 'review_remarks' => $reviewRemarks]);
+    echo json_encode(['ok' => true, 'status' => $newStatus, 'review_remarks' => $reviewRemarks, 'doc_id' => $reviewedDoc ? (int) $reviewedDoc['id'] : null, 'doc_review_status' => $reviewedDoc ? $docReviewStatus : null]);
     exit();
 }
 

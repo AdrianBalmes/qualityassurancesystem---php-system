@@ -13,11 +13,16 @@ require_once __DIR__ . "/session_scope.php";
  */
 $scope = isset($_GET['scope']) ? $_GET['scope'] : 'all';
 
+// Once nothing is signed in any more the visitor is a member of the public
+// again, so they land on the front door rather than staring at a login form
+// they may not have wanted.
+const LOGOUT_DESTINATION = "landing.php";
+
 if($scope === 'admin'){
     session_scope_logout_admin();
 
     // Still signed in as an office? Go where that user can actually go.
-    $destination = session_scope_has_office() ? "office_dashboard.php" : "admin_login.php";
+    $destination = session_scope_has_office() ? "office_dashboard.php" : LOGOUT_DESTINATION;
 
 } elseif($scope === 'office'){
     $office = isset($_GET['office']) ? trim($_GET['office']) : '';
@@ -26,12 +31,12 @@ if($scope === 'admin'){
     if($remaining !== ''){
         $destination = "office_dashboard.php?office=" . rawurlencode($remaining);
     } else {
-        $destination = session_scope_has_admin() ? "home.php" : "index.php";
+        $destination = session_scope_has_admin() ? "home.php" : LOGOUT_DESTINATION;
     }
 
 } else {
     session_scope_logout_all();
-    $destination = "index.php";
+    $destination = LOGOUT_DESTINATION;
 }
 
 header("Location: " . $destination);

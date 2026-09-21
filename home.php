@@ -5,7 +5,8 @@ require_once __DIR__ . "/page_background.php";
 require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/content_helper.php";
 require_once __DIR__ . "/audit_classification.php";
-require_once __DIR__ . "/office_rec_render.php";
+require_once __DIR__ . "/audit_areas.php";
+require_once __DIR__ . "/recommendation_view_rows.php";
 require_once __DIR__ . "/office_directory.php";
 require_once __DIR__ . "/review_columns.php";
 require_once __DIR__ . "/nav_dropdown.php";
@@ -37,6 +38,12 @@ if(!in_array($selectedOffice, $officeNamesForAudit, true)){
     $selectedOffice = '';
 }
 
+// External has no All Offices tile, so there is no tile to represent an empty
+// selection. Open the first office instead of a list nothing is pointing at.
+if($selectedAudit === 'External' && $selectedOffice === '' && !empty($officeNamesForAudit)){
+    $selectedOffice = $officeNamesForAudit[0];
+}
+
 $auditTotalCount = 0;
 $auditPendingCount = 0;
 $auditSubmittedCount = 0;
@@ -66,9 +73,41 @@ foreach($officeNamesForAudit as $officeName){
     $recOfficeCounts[] = $recCountsByOffice[$officeName] ?? 0;
 }
 
+// A programmed office steps through programmes, then that programme's areas,
+// then the recommendations. An office without programmes skips the first step.
+$selectedProgram = isset($_GET['program']) ? trim($_GET['program']) : '';
+if($selectedProgram !== '' && !audit_program_is_valid($selectedOffice, $selectedProgram)){
+    $selectedProgram = '';
+}
+
+$selectedArea = isset($_GET['area']) ? trim($_GET['area']) : '';
+if($selectedArea !== '' && $selectedArea !== AUDIT_AREA_UNASSIGNED
+   && !audit_area_is_valid($selectedOffice, $selectedArea, $selectedProgram)){
+    $selectedArea = '';
+}
+
+$showingPrograms = office_has_programs($selectedOffice) && $selectedProgram === '';
+$showingAreas = !$showingPrograms && office_has_areas($selectedOffice) && $selectedArea === '';
+
 // An empty $selectedOffice is the "All Offices" tab; the fetch helper returns
 // every office for this audit type in that case.
-$auditRecommendations = fetch_office_recommendations($conn, $selectedOffice, $selectedAudit);
+$auditRecommendations = ($showingPrograms || $showingAreas)
+    ? []
+    : fetch_office_recommendations($conn, $selectedOffice, $selectedAudit, $selectedArea, $selectedProgram);
+
+if($showingPrograms){
+    $auditGridTitle = $selectedOffice . ' — Programs';
+} elseif($showingAreas){
+    $auditGridTitle = ($selectedProgram !== '' ? $selectedProgram : $selectedOffice) . ' — Areas';
+} elseif($selectedArea !== ''){
+    $auditGridTitle = ($selectedProgram !== '' ? $selectedProgram : $selectedOffice) . ' — ' . $selectedArea;
+} else {
+    $auditGridTitle = office_recommendations_title($selectedOffice);
+}
+
+// Back steps one level: from an area to its programme's areas, from a
+// programme's areas to the programmes.
+$showBackButton = $selectedArea !== '' || $selectedProgram !== '';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -80,7 +119,51 @@ $auditRecommendations = fetch_office_recommendations($conn, $selectedOffice, $se
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-serif}.topbar{background:linear-gradient(135deg,#316fc4,#2459a6);color:#fff;box-shadow:0 8px 20px rgba(44,93,165,.2)}.nav-wrap{max-width:1680px;margin:auto;min-height:74px;padding:0 clamp(14px,2vw,32px);display:flex;align-items:center;justify-content:space-between;gap:18px}.brand{display:flex;align-items:center;gap:14px;font-size:22px;font-weight:800}.brand-icon{width:64px;height:64px;display:grid;place-items:center;flex-shrink:0}.nav-links{display:flex;gap:20px;flex-wrap:wrap;align-items:center}.nav-links a,.nav-links button{color:#eef4ff;text-decoration:none;font-weight:700;background:none;border:0;padding:0;cursor:pointer;font-size:inherit;font-family:inherit;display:inline-flex;align-items:center;gap:6px}.dashboard{max-width:1680px;margin:26px auto 42px;padding:0 clamp(14px,2vw,32px)}.panel{background:#fff;border:1px solid #dbe3ef;border-radius:8px;box-shadow:0 5px 16px rgba(44,74,119,.12)}.panel-pad{padding:16px}.panel-title{margin:0 0 12px;padding-bottom:10px;border-bottom:1px solid #dbe3ef;font-size:17px;font-weight:800}.muted-copy{color:#66758d;font-size:13px}.stat-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;padding:12px 16px;margin-bottom:14px}.stat-box{min-height:46px;border-radius:7px;display:flex;align-items:center;justify-content:center;gap:7px;padding:10px 12px;font-weight:800}.stat-box strong{font-size:20px}.stat-green{background:#caefdd}.stat-yellow{background:#fff0ba}.stat-red{background:#ffd0c9}.stat-steel{background:#d8e2f5}.chart-box{height:210px}.empty-state{padding:14px;text-align:center;color:#66758d;font-weight:700}.audit-panel{margin-bottom:14px}.audit-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:12px}.audit-switcher{display:flex;gap:8px;flex-wrap:wrap}.audit-switch{min-height:34px;border-radius:5px;background:#fff;border:1px solid #c8d4e7;color:#2e67b8;text-decoration:none;font-size:13px;font-weight:800;padding:7px 12px;display:inline-flex;align-items:center}.audit-switch.active{background:#316fc4;border-color:#316fc4;color:#fff}.section-heading{margin:18px 4px 8px;font-size:19px;font-weight:800;color:#344156}.office-tabs{display:grid;grid-template-columns:36px minmax(0,1fr) 36px;gap:8px;align-items:stretch;background:#e8eef8;border:1px solid #dbe3ef;padding:10px;border-radius:6px}.office-scroll{display:flex;gap:12px;overflow-x:auto;scroll-behavior:smooth;scrollbar-width:thin;-webkit-overflow-scrolling:touch}.office-slide-btn{width:36px;border:1px solid #c8d4e7;border-radius:6px;background:#fff;color:#316fc4;display:grid;place-items:center;flex-shrink:0}.office-tile{flex:0 0 104px;min-height:82px;display:grid;justify-items:center;align-content:center;gap:7px;font-weight:800;font-size:13px;text-decoration:none;color:#344156;border:2px solid transparent;border-radius:6px;padding:6px;text-align:center}.office-tile:hover,.office-tile.active{border-color:#316fc4;background:#f7fbff}.office-icon{width:70px;height:54px;border-radius:6px;background:#fff;color:#3971c1;display:grid;place-items:center;font-size:29px}.document-panel{margin-top:12px}img,canvas,svg{max-width:100%}.dashboard,.page,.nav-wrap{width:100%}.add-row-btn{min-height:38px;border:0;border-radius:5px;background:#316fc4;color:#fff;text-decoration:none;font-weight:800;display:inline-flex;align-items:center;gap:8px;padding:8px 16px}.grid-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:14px}.grid-wrap{overflow-x:auto;border:1px solid #dbe3ef;border-radius:6px;-webkit-overflow-scrolling:touch}.grid-table{width:100%;border-collapse:collapse;min-width:1100px}.grid-table th{background:#f1f5fb;color:#56637a;font-size:13px;text-align:left;padding:10px;border-bottom:2px solid #dbe3ef;position:sticky;top:0}.grid-table td{border-bottom:1px solid #e7edf6;border-right:1px solid #eef2f8;padding:0;vertical-align:top}.cell-text{min-width:160px;padding:8px 10px;font-size:13px;font-weight:600;color:#344156;outline:none;min-height:38px;word-break:break-word;overflow-wrap:anywhere}.cell-text.grid-rec-cell{min-width:320px}.cell-text:focus{background:#eef4ff;box-shadow:inset 0 0 0 2px #316fc4}.cell-select{width:100%;height:100%;border:0;background:transparent;padding:8px 10px;font-size:13px;font-weight:700}.cell-select:focus{background:#eef4ff;outline:none}.cell-year{width:100%;border:0;background:transparent;padding:8px 10px;font-size:13px;font-weight:700}.cell-year:focus{background:#eef4ff;outline:none}.cell-select:disabled,.cell-year:disabled{opacity:1;color:#344156;background:transparent;border:0;-webkit-text-fill-color:#344156}.cell-readonly{padding:8px 10px;font-size:13px;font-weight:700;color:#344156}.row-actions{display:flex;gap:6px;padding:4px;align-items:center}.row-edit-btn,.row-save-btn,.row-delete,.row-review-btn{border:0;border-radius:5px;font-weight:800;font-size:12px;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}.row-edit-btn{background:#eef4ff;color:#2e67b8;padding:6px 10px}.row-save-btn{background:#277548;color:#fff;padding:6px 10px;display:none}.row-review-btn{background:#efe9fb;color:#5b3fa0;padding:6px 10px}.row-review-btn:hover{background:#e2d8f7}.row-delete{background:#ffe1dc;color:#a33831;width:32px;height:32px;justify-content:center}.status-chip{display:inline-flex;padding:4px 9px;border-radius:999px;font-size:11.5px;font-weight:800}.chip-blue{background:#d8e2f5;color:#2e5fa3}.chip-green{background:#cdeedc;color:#277548}.chip-yellow{background:#fff0ba;color:#806119}.chip-red{background:#ffd6d0;color:#a33831}.chip-steel{background:#e4e9f1;color:#4c5a72}.chip-orange{background:#ffe3c2;color:#95530a}.doc-pill-list{display:flex;flex-direction:column;gap:8px}.doc-sidebar-item{display:flex;align-items:center;gap:8px}.doc-pill{font-size:13px;font-weight:700;color:#2e67b8;text-decoration:none;word-break:break-word;display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #dbe3ef;border-radius:6px;flex:1;min-width:0}.doc-pill:hover{background:#f7fbff}.doc-delete-btn{border:0;border-radius:6px;background:#ffe1dc;color:#a33831;width:32px;height:32px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}.doc-delete-btn:hover{background:#ffcac1}.doc-trigger-btn{margin:6px 10px;border:1px solid #c8d4e7;border-radius:5px;background:#eef4ff;color:#2e67b8;font-weight:800;font-size:12.5px;padding:6px 10px;display:inline-flex;align-items:center;gap:7px;cursor:pointer}.doc-trigger-btn:hover{background:#dfeaff}.doc-count-badge{background:#316fc4;color:#fff;border-radius:999px;min-width:18px;height:18px;padding:0 5px;font-size:11px;display:inline-flex;align-items:center;justify-content:center}.doc-sidebar-backdrop{position:fixed;inset:0;background:rgba(15,26,42,.4);opacity:0;pointer-events:none;transition:opacity .2s ease;z-index:1000}.doc-sidebar-backdrop.is-open{opacity:1;pointer-events:auto}.doc-sidebar{position:fixed;top:0;right:0;height:100vh;width:min(360px,92vw);background:#fff;box-shadow:-8px 0 24px rgba(15,26,42,.18);transform:translateX(100%);transition:transform .25s ease;z-index:1001;display:flex;flex-direction:column}.doc-sidebar.is-open{transform:translateX(0)}.doc-sidebar-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid #e6edf7}.doc-sidebar-head h3{margin:0;font-size:16px;font-weight:800;color:#26354b}.doc-sidebar-close{border:0;background:#eef4ff;color:#2e67b8;width:30px;height:30px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}.doc-sidebar-close:hover{background:#dfeaff}.doc-sidebar-rec{padding:12px 18px;border-bottom:1px solid #e6edf7;font-size:13px;font-weight:700;color:#344156;background:#f8fbff}.doc-sidebar-body{padding:14px 18px;overflow-y:auto;flex:1}.review-modal-backdrop{position:fixed;inset:0;background:rgba(15,26,42,.45);opacity:0;pointer-events:none;transition:opacity .2s ease;z-index:1100;display:flex;align-items:center;justify-content:center;padding:20px}.review-modal-backdrop.is-open{opacity:1;pointer-events:auto}.review-modal{background:#fff;border-radius:10px;box-shadow:0 20px 50px rgba(15,26,42,.3);width:min(560px,100%);max-height:90vh;display:flex;flex-direction:column;transform:translateY(16px);transition:transform .2s ease}.review-modal-backdrop.is-open .review-modal{transform:translateY(0)}.review-modal-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #e6edf7}.review-modal-head h3{margin:0;font-size:16px;font-weight:800;color:#26354b;display:flex;align-items:center;gap:8px}.review-modal-body{padding:18px 20px;overflow-y:auto;display:grid;gap:14px}.review-modal-footer{padding:14px 20px;border-top:1px solid #e6edf7;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.review-field-label{font-size:11.5px;font-weight:800;color:#66758d;text-transform:uppercase;margin-bottom:4px;display:block}.review-readonly-block{background:#f8fbff;border:1px solid #e6edf7;border-radius:6px;padding:10px 12px;font-size:13.5px;color:#344156;white-space:pre-wrap;word-break:break-word}.review-textarea{width:100%;min-height:90px;border:1px solid #cfd9e8;border-radius:6px;padding:10px;font-size:13.5px;font-family:inherit;resize:vertical}.review-btn{border:0;border-radius:5px;font-weight:800;font-size:12.5px;padding:9px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}.review-btn-approve{background:#2fa66a;color:#fff}.review-btn-reject{background:#c23b36;color:#fff}.review-btn-revision{background:#e0a51d;color:#fff}.review-btn-completed{background:#316fc4;color:#fff}.review-btn-remarks{background:#eef4ff;color:#2e67b8}.review-btn-cancel{background:#f1f3f7;color:#56637a}tr[data-mode="edit"] .row-edit-btn{display:none}tr[data-mode="edit"] .row-save-btn{display:inline-flex}tr[data-mode="edit"] .cell-text{background:#eef4ff;box-shadow:inset 0 0 0 2px #316fc4}@media(max-width:1060px){.nav-wrap{flex-direction:column;align-items:flex-start;padding:14px 18px}}@media(max-width:760px){.brand{font-size:17px}.chart-box{height:230px}.office-tabs{grid-template-columns:32px minmax(0,1fr) 32px}.office-tile{flex-basis:94px}.audit-head{align-items:flex-start}.audit-switcher{width:100%}.audit-switch{flex:1 1 auto;justify-content:center;text-align:center}}@media(max-width:480px){.dashboard{padding:0 10px;margin:16px auto 28px}.panel-pad{padding:12px}.panel-title{font-size:15px}.page-title{font-size:20px}.stat-box{font-size:12px;padding:8px 10px}.stat-box strong{font-size:17px}.brand{font-size:15px;gap:8px}.brand-icon{width:48px;height:48px}.nav-links{gap:12px;font-size:13px}.office-tile{flex-basis:80px;min-height:72px}.office-icon{width:56px;height:44px;font-size:22px}.section-heading{font-size:16px}}
+body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-serif}.topbar{background:linear-gradient(135deg,#316fc4,#2459a6);color:#fff;box-shadow:0 8px 20px rgba(44,93,165,.2)}.nav-wrap{max-width:1680px;margin:auto;min-height:74px;padding:0 clamp(14px,2vw,32px);display:flex;align-items:center;justify-content:space-between;gap:18px}.brand{display:flex;align-items:center;gap:14px;font-size:22px;font-weight:800}.brand-icon{width:64px;height:64px;display:grid;place-items:center;flex-shrink:0}.nav-links{display:flex;gap:20px;flex-wrap:wrap;align-items:center}.nav-links a,.nav-links button{color:#eef4ff;text-decoration:none;font-weight:700;background:none;border:0;padding:0;cursor:pointer;font-size:inherit;font-family:inherit;display:inline-flex;align-items:center;gap:6px}.dashboard{max-width:1680px;margin:26px auto 42px;padding:0 clamp(14px,2vw,32px)}.panel{background:#fff;border:1px solid #dbe3ef;border-radius:8px;box-shadow:0 5px 16px rgba(44,74,119,.12)}.panel-pad{padding:16px}.panel-title{margin:0 0 12px;padding-bottom:10px;border-bottom:1px solid #dbe3ef;font-size:17px;font-weight:800}.muted-copy{color:#66758d;font-size:13px}.stat-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;padding:12px 16px;margin-bottom:14px}.stat-box{min-height:46px;border-radius:7px;display:flex;align-items:center;justify-content:center;gap:7px;padding:10px 12px;font-weight:800}.stat-box strong{font-size:20px}.stat-green{background:#caefdd}.stat-yellow{background:#fff0ba}.stat-red{background:#ffd0c9}.stat-steel{background:#d8e2f5}.chart-box{height:210px}.empty-state{padding:14px;text-align:center;color:#66758d;font-weight:700}.audit-panel{margin-bottom:14px}.audit-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:12px}.audit-switcher{display:flex;gap:8px;flex-wrap:wrap}.audit-switch{min-height:34px;border-radius:5px;background:#fff;border:1px solid #c8d4e7;color:#2e67b8;text-decoration:none;font-size:13px;font-weight:800;padding:7px 12px;display:inline-flex;align-items:center}.audit-switch.active{background:#316fc4;border-color:#316fc4;color:#fff}.section-heading{margin:18px 4px 8px;font-size:19px;font-weight:800;color:#344156}.office-tabs{display:grid;grid-template-columns:36px minmax(0,1fr) 36px;gap:8px;align-items:stretch;background:#e8eef8;border:1px solid #dbe3ef;padding:10px;border-radius:6px}.office-scroll{display:flex;gap:12px;overflow-x:auto;scroll-behavior:smooth;scrollbar-width:thin;-webkit-overflow-scrolling:touch}.office-slide-btn{width:36px;border:1px solid #c8d4e7;border-radius:6px;background:#fff;color:#316fc4;display:grid;place-items:center;flex-shrink:0}.office-tile{flex:0 0 104px;min-height:82px;display:grid;justify-items:center;align-content:center;gap:7px;font-weight:800;font-size:13px;text-decoration:none;color:#344156;border:2px solid transparent;border-radius:6px;padding:6px;text-align:center}.office-tile:hover,.office-tile.active{border-color:#316fc4;background:#f7fbff}.office-icon{width:70px;height:54px;border-radius:6px;background:#fff;color:#3971c1;display:grid;place-items:center;font-size:29px}.area-cell{padding:18px!important;background:#f8fbff}
+.area-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
+.area-card{text-align:left;border:1px solid #dbe3ef;background:#fff;border-radius:8px;padding:14px 15px;cursor:pointer;display:flex;flex-direction:column;gap:7px;min-height:92px;justify-content:space-between;transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease}
+.area-card:hover{border-color:#316fc4;box-shadow:0 6px 18px rgba(44,74,119,.13);transform:translateY(-1px)}
+.area-name{font-size:14px;font-weight:800;color:#26354b;line-height:1.3}
+.area-tally{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.area-total{font-size:11.5px;font-weight:800;color:#2e5fa3;background:#e6eefb;border-radius:999px;padding:3px 9px}
+.area-pending{font-size:11.5px;font-weight:800;color:#806119;background:#fff0ba;border-radius:999px;padding:3px 9px}
+.area-empty{font-size:12px;font-weight:700;color:#9aa8bf}
+.area-card-unassigned{border-style:dashed}
+/* Programme cards: one row of folders, each in its programme's colour. */
+.prog-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(272px,1fr));gap:14px}
+.prog-card{display:flex;align-items:center;gap:14px;text-align:left;border:1px solid #dbe3ef;background:#fff;border-radius:9px;padding:16px 16px;cursor:pointer;transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease}
+.prog-card:hover{box-shadow:0 8px 22px rgba(44,74,119,.15);transform:translateY(-1px)}
+.prog-icon{width:46px;height:46px;border-radius:10px;flex-shrink:0;display:grid;place-items:center;font-size:21px;color:#fff}
+.prog-body{display:flex;flex-direction:column;gap:6px;min-width:0;flex:1}
+.prog-name{font-size:14.5px;font-weight:800;color:#26354b;line-height:1.3}
+.prog-areas{font-size:11.5px;font-weight:800;border-radius:999px;padding:3px 9px}
+.prog-go{margin-left:auto;color:#a9bad6;font-size:15px;flex-shrink:0}
+/* Blue is the dashboard's existing accent; pink and purple mark the two
+   programmes that asked for their own. */
+.prog-blue .prog-icon{background:linear-gradient(135deg,#3b7ad4,#2459a6)}
+.prog-blue .prog-areas{background:#e6eefb;color:#2e5fa3}
+.prog-blue:hover{border-color:#316fc4}
+.prog-pink .prog-icon{background:linear-gradient(135deg,#ef7ba8,#d9457f)}
+.prog-pink .prog-areas{background:#fde7f0;color:#b93a6e}
+.prog-pink:hover{border-color:#d9457f}
+.prog-purple .prog-icon{background:linear-gradient(135deg,#9b7ae0,#6f42c1)}
+.prog-purple .prog-areas{background:#efe9fb;color:#5b3fa0}
+.prog-purple:hover{border-color:#6f42c1}
+.prog-steel .prog-icon{background:linear-gradient(135deg,#8fa3c0,#5b7091)}
+.prog-steel .prog-areas{background:#e4e9f1;color:#4c5a72}
+/* Area cards inherit the colour of the programme they belong to. */
+.area-pink{border-left:3px solid #d9457f}
+.area-pink:hover{border-color:#d9457f;border-left-color:#d9457f}
+.area-pink .area-total{background:#fde7f0;color:#b93a6e}
+.area-purple{border-left:3px solid #6f42c1}
+.area-purple:hover{border-color:#6f42c1;border-left-color:#6f42c1}
+.area-purple .area-total{background:#efe9fb;color:#5b3fa0}
+.area-blue{border-left:3px solid #316fc4}
+@media(prefers-reduced-motion:reduce){.prog-card{transition:none}.prog-card:hover{transform:none}}
+.back-areas-btn{min-height:32px;border:1px solid #c8d4e7;border-radius:5px;background:#fff;color:#2e67b8;font-weight:800;font-size:12.5px;padding:6px 12px;display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+.back-areas-btn:hover{background:#eef4ff}
+@media(prefers-reduced-motion:reduce){.area-card{transition:none}.area-card:hover{transform:none}}
+.document-panel{margin-top:12px}img,canvas,svg{max-width:100%}.dashboard,.page,.nav-wrap{width:100%}.add-row-btn{min-height:38px;border:0;border-radius:5px;background:#316fc4;color:#fff;text-decoration:none;font-weight:800;display:inline-flex;align-items:center;gap:8px;padding:8px 16px}.grid-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:14px}.grid-wrap{overflow-x:auto;border:1px solid #dbe3ef;border-radius:6px;-webkit-overflow-scrolling:touch}.grid-table{width:100%;border-collapse:collapse;min-width:1100px}.grid-table th{background:#f1f5fb;color:#56637a;font-size:13px;text-align:left;padding:10px;border-bottom:2px solid #dbe3ef;position:sticky;top:0}.grid-table td{border-bottom:1px solid #e7edf6;border-right:1px solid #eef2f8;padding:0;vertical-align:top}.cell-text{min-width:160px;padding:8px 10px;font-size:13px;font-weight:600;color:#344156;outline:none;min-height:38px;word-break:break-word;overflow-wrap:anywhere}.cell-text.grid-rec-cell{min-width:320px}.cell-text:focus{background:#eef4ff;box-shadow:inset 0 0 0 2px #316fc4}.cell-select{width:100%;height:100%;border:0;background:transparent;padding:8px 10px;font-size:13px;font-weight:700}.cell-select:focus{background:#eef4ff;outline:none}.cell-year{width:100%;border:0;background:transparent;padding:8px 10px;font-size:13px;font-weight:700}.cell-year:focus{background:#eef4ff;outline:none}.cell-select:disabled,.cell-year:disabled{opacity:1;color:#344156;background:transparent;border:0;-webkit-text-fill-color:#344156}.incharge-cell{min-width:180px;padding:8px 10px}.incharge-tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}.incharge-tag{display:inline-flex;align-items:center;gap:6px;background:#eef4ff;color:#2e5fa3;font-size:12px;font-weight:700;padding:4px 6px 4px 10px;border-radius:999px}.incharge-remove{border:0;background:transparent;color:#2e5fa3;font-size:14px;line-height:1;cursor:pointer;padding:0 2px}.incharge-remove:hover{color:#a33831}.incharge-empty{font-size:12.5px;color:#94a1b8;font-style:italic}.incharge-add-row{display:flex;flex-direction:column;gap:6px}.incharge-person-row{display:flex;gap:4px}.incharge-person-input{flex:1;min-width:0;border:1px solid #dbe3ef;border-radius:5px;padding:5px 6px;font-size:12.5px}.incharge-add-btn{border:0;border-radius:5px;background:#316fc4;color:#fff;width:26px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}.incharge-add-btn:hover{background:#265aa0}tr[data-mode="view"] .incharge-add-row,tr[data-mode="view"] .incharge-remove{display:none}.remarks-grouped{display:flex;flex-direction:column;gap:8px;padding:8px 10px}.remarks-office-block{border-left:3px solid #dbe3ef;padding-left:8px}.remarks-office-label{display:block;font-size:11px;font-weight:800;text-transform:uppercase;color:#66758d;margin-bottom:2px}.remarks-office-text{font-size:13px;font-weight:600;color:#344156;word-break:break-word}.cell-readonly{padding:8px 10px;font-size:13px;font-weight:700;color:#344156}.row-actions{display:flex;gap:6px;padding:4px;align-items:center}.row-edit-btn,.row-save-btn,.row-delete,.row-review-btn{border:0;border-radius:5px;font-weight:800;font-size:12px;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}.row-edit-btn{background:#eef4ff;color:#2e67b8;padding:6px 10px}.row-save-btn{background:#277548;color:#fff;padding:6px 10px;display:none}.row-review-btn{background:#efe9fb;color:#5b3fa0;padding:6px 10px}.row-review-btn:hover{background:#e2d8f7}.row-delete{background:#ffe1dc;color:#a33831;width:32px;height:32px;justify-content:center}.status-chip{display:inline-flex;padding:4px 9px;border-radius:999px;font-size:11.5px;font-weight:800}.chip-blue{background:#d8e2f5;color:#2e5fa3}.chip-green{background:#cdeedc;color:#277548}.chip-yellow{background:#fff0ba;color:#806119}.chip-red{background:#ffd6d0;color:#a33831}.chip-steel{background:#e4e9f1;color:#4c5a72}.chip-orange{background:#ffe3c2;color:#95530a}.doc-pill-list{display:flex;flex-direction:column;gap:8px}.doc-sidebar-item{display:flex;align-items:center;gap:8px}.doc-pill{font-size:13px;font-weight:700;color:#2e67b8;text-decoration:none;word-break:break-word;display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #dbe3ef;border-radius:6px;flex:1;min-width:0}.doc-pill:hover{background:#f7fbff}.doc-delete-btn{border:0;border-radius:6px;background:#ffe1dc;color:#a33831;width:32px;height:32px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}.doc-delete-btn:hover{background:#ffcac1}.doc-trigger-btn{margin:6px 10px;border:1px solid #c8d4e7;border-radius:5px;background:#eef4ff;color:#2e67b8;font-weight:800;font-size:12.5px;padding:6px 10px;display:inline-flex;align-items:center;gap:7px;cursor:pointer}.doc-trigger-btn:hover{background:#dfeaff}.doc-count-badge{background:#316fc4;color:#fff;border-radius:999px;min-width:18px;height:18px;padding:0 5px;font-size:11px;display:inline-flex;align-items:center;justify-content:center}.doc-sidebar-backdrop{position:fixed;inset:0;background:rgba(15,26,42,.4);opacity:0;pointer-events:none;transition:opacity .2s ease;z-index:1000}.doc-sidebar-backdrop.is-open{opacity:1;pointer-events:auto}.doc-sidebar{position:fixed;top:0;right:0;height:100vh;width:min(360px,92vw);background:#fff;box-shadow:-8px 0 24px rgba(15,26,42,.18);transform:translateX(100%);transition:transform .25s ease;z-index:1001;display:flex;flex-direction:column}.doc-sidebar.is-open{transform:translateX(0)}.doc-sidebar-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid #e6edf7}.doc-sidebar-head h3{margin:0;font-size:16px;font-weight:800;color:#26354b}.doc-sidebar-close{border:0;background:#eef4ff;color:#2e67b8;width:30px;height:30px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}.doc-sidebar-close:hover{background:#dfeaff}.doc-sidebar-rec{padding:12px 18px;border-bottom:1px solid #e6edf7;font-size:13px;font-weight:700;color:#344156;background:#f8fbff}.doc-sidebar-body{padding:14px 18px;overflow-y:auto;flex:1}.doc-office-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;border-bottom:1px solid #e6edf7;padding-bottom:10px}.doc-office-tab{border:1px solid #dbe3ef;background:#fff;color:#56637a;font-weight:800;font-size:12px;padding:6px 12px;border-radius:999px;cursor:pointer}.doc-office-tab:hover{background:#f7fbff}.doc-office-tab.active{background:#316fc4;border-color:#316fc4;color:#fff}.review-modal-backdrop{position:fixed;inset:0;background:rgba(15,26,42,.45);opacity:0;pointer-events:none;transition:opacity .2s ease;z-index:1100;display:flex;align-items:center;justify-content:center;padding:20px}.review-modal-backdrop.is-open{opacity:1;pointer-events:auto}.review-modal{background:#fff;border-radius:10px;box-shadow:0 20px 50px rgba(15,26,42,.3);width:min(560px,100%);max-height:90vh;display:flex;flex-direction:column;transform:translateY(16px);transition:transform .2s ease}.review-modal-backdrop.is-open .review-modal{transform:translateY(0)}.review-modal-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #e6edf7}.review-modal-head h3{margin:0;font-size:16px;font-weight:800;color:#26354b;display:flex;align-items:center;gap:8px}.review-modal-body{padding:18px 20px;overflow-y:auto;display:grid;gap:14px}.review-modal-footer{padding:14px 20px;border-top:1px solid #e6edf7;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.review-field-label{font-size:11.5px;font-weight:800;color:#66758d;text-transform:uppercase;margin-bottom:4px;display:block}.review-readonly-block{background:#f8fbff;border:1px solid #e6edf7;border-radius:6px;padding:10px 12px;font-size:13.5px;color:#344156;white-space:pre-wrap;word-break:break-word}.review-textarea{width:100%;min-height:90px;border:1px solid #cfd9e8;border-radius:6px;padding:10px;font-size:13.5px;font-family:inherit;resize:vertical}.review-btn{border:0;border-radius:5px;font-weight:800;font-size:12.5px;padding:9px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}.review-btn-approve{background:#2fa66a;color:#fff}.review-btn-reject{background:#c23b36;color:#fff}.review-btn-revision{background:#e0a51d;color:#fff}.review-btn-completed{background:#316fc4;color:#fff}.review-btn-remarks{background:#eef4ff;color:#2e67b8}.review-btn-cancel{background:#f1f3f7;color:#56637a}.review-btn:disabled{opacity:.45;cursor:not-allowed}.review-doc-option{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid #dbe3ef;border-radius:6px;cursor:pointer;margin:0}.review-doc-option.is-selected{border-color:#316fc4;background:#f3f8ff}.review-doc-option .doc-pill{border:0;padding:2px 0;flex:1;min-width:0}.review-doc-meta{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;color:#66758d;flex-shrink:0}tr[data-mode="edit"] .row-edit-btn{display:none}tr[data-mode="edit"] .row-save-btn{display:inline-flex}tr[data-mode="edit"] .cell-text{background:#eef4ff;box-shadow:inset 0 0 0 2px #316fc4}@media(max-width:1060px){.nav-wrap{flex-direction:column;align-items:flex-start;padding:14px 18px}}@media(max-width:760px){.brand{font-size:17px}.chart-box{height:230px}.office-tabs{grid-template-columns:32px minmax(0,1fr) 32px}.office-tile{flex-basis:94px}.audit-head{align-items:flex-start}.audit-switcher{width:100%}.audit-switch{flex:1 1 auto;justify-content:center;text-align:center}}@media(max-width:480px){.dashboard{padding:0 10px;margin:16px auto 28px}.panel-pad{padding:12px}.panel-title{font-size:15px}.page-title{font-size:20px}.stat-box{font-size:12px;padding:8px 10px}.stat-box strong{font-size:17px}.brand{font-size:15px;gap:8px}.brand-icon{width:48px;height:48px}.nav-links{gap:12px;font-size:13px}.office-tile{flex-basis:80px;min-height:72px}.office-icon{width:56px;height:44px;font-size:22px}.section-heading{font-size:16px}}
 </style>
 </head>
 <body>
@@ -97,7 +180,11 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
     <div class="office-tabs">
         <button type="button" class="office-slide-btn" data-slide-office="-1" aria-label="Slide offices left"><i class="bi bi-chevron-left"></i></button>
         <div class="office-scroll" id="officeTabs">
+            <?php /* External audit has only two offices, each opening its own
+                     areas, so an All Offices tile mixing them adds nothing. */ ?>
+            <?php if($selectedAudit !== 'External'): ?>
             <a class="office-tile<?php echo $selectedOffice === '' ? ' active' : ''; ?>" data-office="" href="home.php?audit=<?php echo urlencode($selectedAudit); ?>#audit-recommendations"><div class="office-icon"><i class="bi bi-grid-fill"></i></div><span>All Offices</span></a>
+            <?php endif; ?>
             <?php foreach($officeNamesForAudit as $officeName):
                 $officeLabel = htmlspecialchars($officeName, ENT_QUOTES);
                 $officeUrl = urlencode($officeName);
@@ -127,15 +214,23 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
         <div class="stat-box stat-red">Not Submitted: <strong><?php echo $auditNotSubmittedCount; ?></strong></div>
     </div>
     <div class="grid-head">
-        <h3 class="panel-title" id="auditRecTitle" style="font-size:15px;border-bottom:0;padding-bottom:0;margin-bottom:0"><?php echo htmlspecialchars(office_recommendations_title($selectedOffice), ENT_QUOTES); ?></h3>
-        <button type="button" id="addRowBtn" class="add-row-btn" <?php echo $selectedOffice === '' ? 'style="display:none"' : ''; ?>><i class="bi bi-plus-lg"></i> Add Row</button>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <button type="button" id="backToAreasBtn" class="back-areas-btn" <?php echo $showBackButton ? '' : 'style="display:none"'; ?>><i class="bi bi-arrow-left"></i> Back</button>
+            <h3 class="panel-title" id="auditRecTitle" style="font-size:15px;border-bottom:0;padding-bottom:0;margin-bottom:0"><?php echo htmlspecialchars($auditGridTitle, ENT_QUOTES); ?></h3>
+        </div>
+        <button type="button" id="addRowBtn" class="add-row-btn" <?php echo ($selectedOffice === '' || $showingAreas || $showingPrograms) ? 'style="display:none"' : ''; ?>><i class="bi bi-plus-lg"></i> Add Row</button>
     </div>
     <div class="grid-wrap">
         <table class="grid-table" id="recGrid">
             <thead>
-                <tr>
+                <tr id="recGridHeadRow">
+                    <?php if($selectedOffice === '' || $selectedAudit !== 'External'): ?>
                     <th style="width:160px">Office</th>
                     <th>Recommendation</th>
+                    <?php else: ?>
+                    <th>Recommendation</th>
+                    <th style="width:160px">In Charge</th>
+                    <?php endif; ?>
                     <th style="width:140px">Status of Submission</th>
                     <th>Remarks</th>
                     <th style="width:150px">Submitted Documents</th>
@@ -145,10 +240,16 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
             </thead>
             <tbody id="auditRecTbody">
                 <?php
-                $auditRecIds = array_map(function($row){ return (int) $row['id']; }, $auditRecommendations);
-                $auditDocsByRecommendation = fetch_recommendation_documents_map($conn, $auditRecIds);
-                $auditRecRendered = render_office_recommendation_rows($auditRecommendations, $selectedOffice, $selectedAudit, $auditDocsByRecommendation);
-                echo $auditRecRendered['html'];
+                if($showingPrograms){
+                    echo render_program_cards($conn, $selectedOffice, $selectedAudit);
+                } elseif($showingAreas){
+                    echo render_area_cards($conn, $selectedOffice, $selectedAudit, $selectedProgram);
+                } else {
+                    $auditRecIds = array_map(function($row){ return (int) $row['id']; }, $auditRecommendations);
+                    $auditDocsByRecommendation = fetch_recommendation_documents_map($conn, $auditRecIds);
+                    $auditRecRendered = render_office_recommendation_rows($auditRecommendations, $selectedOffice, $selectedAudit, $auditDocsByRecommendation);
+                    echo $auditRecRendered['html'];
+                }
                 ?>
             </tbody>
         </table>
@@ -188,7 +289,7 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
                 <div class="review-readonly-block" id="reviewOfficeRemarks"></div>
             </div>
             <div>
-                <span class="review-field-label">Submitted Documents</span>
+                <span class="review-field-label" id="reviewDocsLabel">Submitted Documents</span>
                 <div id="reviewDocsList"></div>
             </div>
             <div>
@@ -219,15 +320,7 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
 
     var currentTrigger = null;
 
-    function renderDocs(docs){
-        bodyEl.innerHTML = '';
-        if(!docs.length){
-            var empty = document.createElement('div');
-            empty.className = 'muted-copy';
-            empty.textContent = 'No documents submitted.';
-            bodyEl.appendChild(empty);
-            return;
-        }
+    function buildDocPillList(docs){
         var list = document.createElement('div');
         list.className = 'doc-pill-list';
         docs.forEach(function(doc){
@@ -255,13 +348,77 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
 
             list.appendChild(item);
         });
-        bodyEl.appendChild(list);
+        return list;
     }
 
-    function openSidebar(trigger, recText, docs){
+    function renderDocs(docs, owningOffice){
+        bodyEl.innerHTML = '';
+        if(!docs.length){
+            var empty = document.createElement('div');
+            empty.className = 'muted-copy';
+            empty.textContent = 'No documents submitted.';
+            bodyEl.appendChild(empty);
+            return;
+        }
+
+        var distinctOffices = [];
+        docs.forEach(function(doc){
+            var off = doc.office || '';
+            if(off !== '' && distinctOffices.indexOf(off) === -1){ distinctOffices.push(off); }
+        });
+
+        // Grouping by submitting office only matters for College Department:
+        // that is the office whose recommendations can be passed to others via
+        // In Charge, so its documents can arrive from more than one office.
+        if(owningOffice === 'College Department' && distinctOffices.length > 1){
+            var tabs = document.createElement('div');
+            tabs.className = 'doc-office-tabs';
+            var listWrap = document.createElement('div');
+
+            function showOffice(off){
+                tabs.querySelectorAll('.doc-office-tab').forEach(function(btn){
+                    btn.classList.toggle('active', btn.getAttribute('data-doc-office') === off);
+                });
+                listWrap.innerHTML = '';
+                var filtered = off === '' ? docs : docs.filter(function(doc){ return (doc.office || '') === off; });
+                listWrap.appendChild(buildDocPillList(filtered));
+            }
+
+            var allBtn = document.createElement('button');
+            allBtn.type = 'button';
+            allBtn.className = 'doc-office-tab active';
+            allBtn.setAttribute('data-doc-office', '');
+            allBtn.textContent = 'All';
+            tabs.appendChild(allBtn);
+
+            distinctOffices.forEach(function(off){
+                var btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'doc-office-tab';
+                btn.setAttribute('data-doc-office', off);
+                btn.textContent = off;
+                tabs.appendChild(btn);
+            });
+
+            tabs.addEventListener('click', function(e){
+                var btn = e.target.closest('.doc-office-tab');
+                if(!btn){ return; }
+                showOffice(btn.getAttribute('data-doc-office'));
+            });
+
+            bodyEl.appendChild(tabs);
+            bodyEl.appendChild(listWrap);
+            showOffice('');
+            return;
+        }
+
+        bodyEl.appendChild(buildDocPillList(docs));
+    }
+
+    function openSidebar(trigger, recText, docs, owningOffice){
         currentTrigger = trigger;
         recTextEl.textContent = recText;
-        renderDocs(docs);
+        renderDocs(docs, owningOffice);
         sidebar.classList.add('is-open');
         backdrop.classList.add('is-open');
         sidebar.setAttribute('aria-hidden', 'false');
@@ -279,7 +436,7 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
         if(trigger){
             var docs = [];
             try { docs = JSON.parse(trigger.getAttribute('data-docs') || '[]'); } catch(err){ docs = []; }
-            openSidebar(trigger, trigger.getAttribute('data-rec-text') || '', docs);
+            openSidebar(trigger, trigger.getAttribute('data-rec-text') || '', docs, trigger.getAttribute('data-office') || '');
             return;
         }
 
@@ -298,7 +455,7 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
                 try { docs = JSON.parse(currentTrigger.getAttribute('data-docs') || '[]'); } catch(err){ docs = []; }
                 docs = docs.filter(function(doc){ return String(doc.id) !== String(docId); });
                 currentTrigger.setAttribute('data-docs', JSON.stringify(docs));
-                renderDocs(docs);
+                renderDocs(docs, currentTrigger.getAttribute('data-office') || '');
 
                 if(docs.length === 0){
                     var cell = currentTrigger.closest('td');
@@ -349,12 +506,42 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
         statusBadge.className = 'status-chip ' + info[1];
     }
 
+    // College Department reviews one submitted document at a time; every other
+    // office is reviewed as a whole, exactly as before.
+    var docsLabelEl = document.getElementById('reviewDocsLabel');
+    var perDocument = false;
+    var reviewDocs = [];
+    var selectedDocId = null;
+
+    var docChipMap = {
+        'Approved': ['Approved', 'chip-blue'],
+        'Rejected': ['Rejected', 'chip-red'],
+        'Needs Revision': ['Needs Revision', 'chip-orange'],
+        'Remarks only': ['Remarks added', 'chip-steel']
+    };
+
+    // Everything except Mark Completed needs a document chosen first.
+    function updateActionButtons(){
+        backdrop.querySelectorAll('[data-review-action]').forEach(function(btn){
+            var needsDoc = perDocument && btn.getAttribute('data-review-action') !== 'completed';
+            btn.disabled = needsDoc && selectedDocId === null;
+            btn.title = btn.disabled ? 'Choose a submitted document to review first' : '';
+        });
+    }
+
+    function selectReviewDoc(docId){
+        selectedDocId = docId;
+        var doc = reviewDocs.filter(function(d){ return String(d.id) === String(docId); })[0];
+        remarksInput.value = doc ? (doc.review_remarks || '') : '';
+        updateActionButtons();
+    }
+
     function renderReviewDocs(docs){
         docsListEl.innerHTML = '';
         if(!docs.length){
             var empty = document.createElement('div');
             empty.className = 'muted-copy';
-            empty.textContent = 'No documents submitted.';
+            empty.textContent = perDocument ? 'No submitted documents to review yet.' : 'No documents submitted.';
             docsListEl.appendChild(empty);
             return;
         }
@@ -370,7 +557,39 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
             icon.className = 'bi bi-paperclip';
             a.appendChild(icon);
             a.appendChild(document.createTextNode(doc.label || ''));
-            list.appendChild(a);
+
+            if(!perDocument){
+                list.appendChild(a);
+                return;
+            }
+
+            var option = document.createElement('label');
+            option.className = 'review-doc-option' + (String(doc.id) === String(selectedDocId) ? ' is-selected' : '');
+            var radio = document.createElement('input');
+            radio.type = 'radio';
+            radio.name = 'reviewDoc';
+            radio.value = doc.id;
+            radio.checked = String(doc.id) === String(selectedDocId);
+            radio.addEventListener('change', function(){
+                selectReviewDoc(doc.id);
+                list.querySelectorAll('.review-doc-option').forEach(function(o){ o.classList.remove('is-selected'); });
+                option.classList.add('is-selected');
+            });
+            option.appendChild(radio);
+            option.appendChild(a);
+
+            var meta = document.createElement('span');
+            meta.className = 'review-doc-meta';
+            if(doc.office){ meta.appendChild(document.createTextNode(doc.office)); }
+            if(doc.review_status){
+                var info = docChipMap[doc.review_status] || [doc.review_status, 'chip-steel'];
+                var chip = document.createElement('span');
+                chip.className = 'status-chip ' + info[1];
+                chip.textContent = info[0];
+                meta.appendChild(chip);
+            }
+            option.appendChild(meta);
+            list.appendChild(option);
         });
         docsListEl.appendChild(list);
     }
@@ -381,10 +600,19 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
         recText.textContent = trigger.getAttribute('data-rec-text') || '(No recommendation text yet)';
         renderStatusBadge(trigger.getAttribute('data-status') || 'Pending');
         officeRemarksEl.textContent = trigger.getAttribute('data-remarks') || '(No compliance response submitted yet)';
-        remarksInput.value = trigger.getAttribute('data-review-remarks') || '';
-        var docs = [];
-        try { docs = JSON.parse(trigger.getAttribute('data-docs') || '[]'); } catch(err){ docs = []; }
-        renderReviewDocs(docs);
+        try { reviewDocs = JSON.parse(trigger.getAttribute('data-docs') || '[]'); } catch(err){ reviewDocs = []; }
+
+        perDocument = trigger.getAttribute('data-office') === 'College Department';
+        selectedDocId = null;
+        if(docsLabelEl){
+            docsLabelEl.textContent = perDocument ? 'Choose the submitted document to review' : 'Submitted Documents';
+        }
+        // Per document, the remarks belong to whichever file is chosen.
+        remarksInput.value = perDocument ? '' : (trigger.getAttribute('data-review-remarks') || '');
+        remarksInput.placeholder = perDocument ? 'Choose a document above, then add feedback for it...' : 'Add feedback for the office...';
+
+        renderReviewDocs(reviewDocs);
+        updateActionButtons();
         backdrop.classList.add('is-open');
     }
 
@@ -411,20 +639,35 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
             var decision = btn.getAttribute('data-review-action');
             var recId = currentTrigger.getAttribute('data-rec-id');
             var reviewRemarksValue = remarksInput.value;
+            var reviewBody = 'action=review_recommendation&id=' + encodeURIComponent(recId) +
+                '&decision=' + encodeURIComponent(decision) +
+                '&review_remarks=' + encodeURIComponent(reviewRemarksValue);
+            if(perDocument && decision !== 'completed' && selectedDocId !== null){
+                reviewBody += '&doc_id=' + encodeURIComponent(selectedDocId);
+            }
             btn.disabled = true;
             fetch('recommendations_api.php', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: 'action=review_recommendation&id=' + encodeURIComponent(recId) +
-                    '&decision=' + encodeURIComponent(decision) +
-                    '&review_remarks=' + encodeURIComponent(reviewRemarksValue)
+                body: reviewBody
             }).then(function(res){ return res.json(); }).then(function(data){
-                btn.disabled = false;
+                updateActionButtons();
                 if(!data.ok){ alert(data.error || 'Could not save the review.'); return; }
 
                 currentTrigger.setAttribute('data-status', data.status);
                 currentTrigger.setAttribute('data-review-remarks', data.review_remarks);
                 renderStatusBadge(data.status);
+
+                // Keep the chosen document's decision so reopening shows it.
+                if(data.doc_id){
+                    reviewDocs.forEach(function(d){
+                        if(String(d.id) === String(data.doc_id)){
+                            d.review_status = data.doc_review_status;
+                            d.review_remarks = reviewRemarksValue;
+                        }
+                    });
+                    currentTrigger.setAttribute('data-docs', JSON.stringify(reviewDocs));
+                }
 
                 var row = currentTrigger.closest('tr');
                 if(row){
@@ -434,7 +677,7 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
 
                 closeReviewModal();
             }).catch(function(){
-                btn.disabled = false;
+                updateActionButtons();
                 alert('Could not save the review. Please try again.');
             });
         });
@@ -443,11 +686,33 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
 (function(){
     var selectedAudit = <?php echo json_encode($selectedAudit); ?>;
     var currentOffice = <?php echo json_encode($selectedOffice); ?>;
+    var currentArea = <?php echo json_encode($selectedArea); ?>;
+    var currentProgram = <?php echo json_encode($selectedProgram); ?>;
     var officeTabs = document.getElementById('officeTabs');
     var auditTbody = document.getElementById('auditRecTbody');
     var auditTitle = document.getElementById('auditRecTitle');
     var addRowBtn = document.getElementById('addRowBtn');
+    var backBtn = document.getElementById('backToAreasBtn');
+    var gridHeadRow = document.getElementById('recGridHeadRow');
     if(!officeTabs || !auditTbody || !auditTitle){ return; }
+    initInChargeCells(auditTbody);
+
+    // "Office" only means something once rows from more than one office are
+    // mixed together; scoped to a single office it becomes "In Charge" instead.
+    function updateGridHeader(office){
+        if(!gridHeadRow){ return; }
+        // In Charge only applies to External Audit; Internal Audit offices
+        // always keep the plain Office column, even with one office selected.
+        gridHeadRow.innerHTML = (office === '' || selectedAudit !== 'External')
+            ? "<th style='width:160px'>Office</th><th>Recommendation</th>"
+              + "<th style='width:140px'>Status of Submission</th><th>Remarks</th>"
+              + "<th style='width:150px'>Submitted Documents</th><th style='width:90px'>Year</th>"
+              + "<th style='width:190px'>Actions</th>"
+            : "<th>Recommendation</th><th style='width:160px'>In Charge</th>"
+              + "<th style='width:140px'>Status of Submission</th><th>Remarks</th>"
+              + "<th style='width:150px'>Submitted Documents</th><th style='width:90px'>Year</th>"
+              + "<th style='width:190px'>Actions</th>";
+    }
 
     // Office names are pasted into HTML below; an apostrophe ("Dean's Office")
     // used to end the data-office attribute early and break the row's buttons.
@@ -467,13 +732,75 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
         "</div>";
     }
 
+    function inChargeCellHtml(){
+        return "<div class='incharge-cell' data-field='in_charge' data-json='[]'>" +
+            "<div class='incharge-tags'></div>" +
+            "<div class='incharge-add-row'>" +
+                "<div class='incharge-person-row'>" +
+                    "<input type='text' class='incharge-person-input' placeholder='Add in charge'>" +
+                    "<button type='button' class='incharge-add-btn' title='Add'><i class='bi bi-plus-lg'></i></button>" +
+                "</div>" +
+            "</div>" +
+        "</div>";
+    }
+
+    function parseInCharge(raw){
+        try {
+            var arr = JSON.parse(raw || '[]');
+            if(Array.isArray(arr)){
+                return arr.filter(function(v){ return typeof v === 'string' && v.trim() !== ''; });
+            }
+        } catch(e){}
+        // A plain string is a row saved before this multi-value redesign.
+        return raw && raw.trim() !== '' ? [raw.trim()] : [];
+    }
+
+    function renderInChargeTags(cell){
+        var list = parseInCharge(cell.getAttribute('data-json'));
+        var tagsWrap = cell.querySelector('.incharge-tags');
+        tagsWrap.innerHTML = list.length
+            ? list.map(function(name, idx){
+                return "<span class='incharge-tag'>" + escapeHtml(name) +
+                    "<button type='button' class='incharge-remove' data-index='" + idx + "' title='Remove'>&times;</button></span>";
+            }).join('')
+            : "<span class='incharge-empty'>Not yet assigned</span>";
+        cell.setAttribute('data-json', JSON.stringify(list));
+    }
+
+    function addInCharge(cell, name){
+        name = (name || '').trim();
+        if(!name){ return; }
+        var list = parseInCharge(cell.getAttribute('data-json'));
+        if(list.indexOf(name) !== -1){ return; }
+        list.push(name);
+        cell.setAttribute('data-json', JSON.stringify(list));
+        renderInChargeTags(cell);
+    }
+
+    function removeInChargeAt(cell, index){
+        var list = parseInCharge(cell.getAttribute('data-json'));
+        list.splice(index, 1);
+        cell.setAttribute('data-json', JSON.stringify(list));
+        renderInChargeTags(cell);
+    }
+
+    function initInChargeCells(root){
+        root.querySelectorAll('.incharge-cell').forEach(renderInChargeTags);
+    }
+
     function buildRow(id, office){
         var tr = document.createElement('tr');
         tr.setAttribute('data-id', id);
         tr.setAttribute('data-mode', 'edit');
+        // In Charge is External Audit only; Internal Audit rows keep the
+        // plain Office column instead.
+        var leadCellsHtml = selectedAudit === 'External'
+            ? "<td><div class='cell-text grid-rec-cell' contenteditable='true' data-field='recommendation'></div></td>" +
+              "<td>" + inChargeCellHtml() + "</td>"
+            : "<td class='cell-readonly'>" + escapeHtml(office) + "</td>" +
+              "<td><div class='cell-text grid-rec-cell' contenteditable='true' data-field='recommendation'></div></td>";
         tr.innerHTML =
-            "<td class='cell-readonly'>" + escapeHtml(office) + "</td>" +
-            "<td><div class='cell-text grid-rec-cell' contenteditable='true' data-field='recommendation'></div></td>" +
+            leadCellsHtml +
             "<td><select class='cell-select' data-field='status'>" +
                 "<option value='Pending' selected>Pending</option>" +
                 "<option value='Submitted'>Submitted</option>" +
@@ -501,7 +828,9 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
         var values = {};
         tr.querySelectorAll('[data-field]').forEach(function(el){
             var field = el.getAttribute('data-field');
-            if(el.classList.contains('cell-text')){
+            if(el.classList.contains('incharge-cell')){
+                values[field] = el.getAttribute('data-json') || '[]';
+            } else if(el.classList.contains('cell-text')){
                 values[field] = el.innerText.replace(/\n+$/, '');
             } else {
                 values[field] = el.value;
@@ -531,14 +860,21 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
             var id = trSave.getAttribute('data-id');
             var values = readRowValues(trSave);
             saveBtn.disabled = true;
+            // Grouped, per-office remarks render read-only with no data-field,
+            // so values.remarks is absent there -- omit it rather than send an
+            // empty value that would wipe out every office's submission.
+            var saveBody = 'action=save_office_recommendation&id=' + encodeURIComponent(id) +
+                '&recommendation=' + encodeURIComponent(values.recommendation || '') +
+                '&status=' + encodeURIComponent(values.status || '') +
+                '&year=' + encodeURIComponent(values.year || '') +
+                '&in_charge=' + encodeURIComponent(values.in_charge || '');
+            if(values.remarks !== undefined){
+                saveBody += '&remarks=' + encodeURIComponent(values.remarks);
+            }
             fetch('recommendations_api.php', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: 'action=save_office_recommendation&id=' + encodeURIComponent(id) +
-                    '&recommendation=' + encodeURIComponent(values.recommendation || '') +
-                    '&status=' + encodeURIComponent(values.status || '') +
-                    '&remarks=' + encodeURIComponent(values.remarks || '') +
-                    '&year=' + encodeURIComponent(values.year || '')
+                body: saveBody
             }).then(function(res){ return res.json(); }).then(function(data){
                 saveBtn.disabled = false;
                 if(!data.ok){
@@ -568,7 +904,34 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
                     auditTbody.innerHTML = "<tr><td colspan='7' class='empty-state'>No recommendations available for this office</td></tr>";
                 }
             });
+            return;
         }
+
+        var removeTagBtn = e.target.closest('.incharge-remove');
+        if(removeTagBtn){
+            var removeCell = removeTagBtn.closest('.incharge-cell');
+            removeInChargeAt(removeCell, parseInt(removeTagBtn.getAttribute('data-index'), 10));
+            return;
+        }
+
+        var addTagBtn = e.target.closest('.incharge-add-btn');
+        if(addTagBtn){
+            var addCell = addTagBtn.closest('.incharge-cell');
+            var personInput = addCell.querySelector('.incharge-person-input');
+            addInCharge(addCell, personInput.value);
+            personInput.value = '';
+            personInput.focus();
+        }
+    });
+
+    auditTbody.addEventListener('keydown', function(e){
+        if(e.key !== 'Enter'){ return; }
+        var personInput = e.target.closest('.incharge-person-input');
+        if(!personInput){ return; }
+        e.preventDefault();
+        var cell = personInput.closest('.incharge-cell');
+        addInCharge(cell, personInput.value);
+        personInput.value = '';
     });
 
     if(addRowBtn){
@@ -577,16 +940,66 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
             fetch('recommendations_api.php', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                // Filed under the area currently open, so it appears in the
+                // right card rather than falling into Unassigned.
                 body: 'action=add_office_recommendation&office=' + encodeURIComponent(currentOffice)
+                    + (currentProgram ? '&program=' + encodeURIComponent(currentProgram) : '')
+                    + (currentArea ? '&area=' + encodeURIComponent(currentArea) : '')
             }).then(function(res){ return res.json(); }).then(function(data){
                 if(!data.ok){ alert(data.error || 'Could not add a new row.'); return; }
                 clearPlaceholderRow();
                 var tr = buildRow(data.id, currentOffice);
                 auditTbody.insertBefore(tr, auditTbody.firstChild);
+                initInChargeCells(tr);
                 var firstCell = tr.querySelector('.cell-text');
                 if(firstCell){ firstCell.focus(); }
             });
         });
+    }
+
+    // One loader for all three ways of moving around: picking an office tile,
+    // opening an area card, and stepping back out to the areas.
+    function loadGrid(office, program, area){
+        auditTbody.innerHTML = "<tr><td colspan='7' class='empty-state'>Loading&hellip;</td></tr>";
+
+        var params = new URLSearchParams({audit: selectedAudit});
+        if(office !== ''){ params.set('office', office); }
+        if(program !== ''){ params.set('program', program); }
+        if(area !== ''){ params.set('area', area); }
+
+        fetch('office_recommendations_view.php?' + params.toString())
+            .then(function(res){ return res.json(); })
+            .then(function(data){
+                if(!data.ok){ return; }
+                currentOffice = data.office;
+                currentProgram = data.program || '';
+                currentArea = data.area || '';
+                auditTbody.innerHTML = data.html;
+                auditTitle.textContent = data.title;
+                updateGridHeader(currentOffice);
+                initInChargeCells(auditTbody);
+
+                // Add Row needs somewhere to file the recommendation: not on
+                // "All Offices", and not while programmes or areas are listed.
+                if(addRowBtn){
+                    addRowBtn.style.display =
+                        (currentOffice === '' || data.view === 'areas' || data.view === 'programs') ? 'none' : '';
+                }
+                // Back appears from the moment there is a level to step back to.
+                if(backBtn){
+                    backBtn.style.display = (currentArea === '' && currentProgram === '') ? 'none' : '';
+                }
+
+                var newUrl = 'home.php?audit=' + encodeURIComponent(selectedAudit)
+                    + (currentOffice !== '' ? '&office=' + encodeURIComponent(currentOffice) : '')
+                    + (currentProgram !== '' ? '&program=' + encodeURIComponent(currentProgram) : '')
+                    + (currentArea !== '' ? '&area=' + encodeURIComponent(currentArea) : '')
+                    + '#audit-recommendations';
+                window.history.replaceState(null, '', newUrl);
+            })
+            .catch(function(){
+                auditTbody.innerHTML = "<tr><td colspan='7' class='empty-state'>Unable to load recommendations right now.</td></tr>";
+            });
     }
 
     officeTabs.addEventListener('click', function(e){
@@ -598,28 +1011,39 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
         officeTabs.querySelectorAll('.office-tile').forEach(function(t){ t.classList.remove('active'); });
         tile.classList.add('active');
 
-        auditTbody.innerHTML = "<tr><td colspan='7' class='empty-state'>Loading&hellip;</td></tr>";
-
-        var params = new URLSearchParams({audit: selectedAudit});
-        if(office !== ''){ params.set('office', office); }
-
-        fetch('office_recommendations_view.php?' + params.toString())
-            .then(function(res){ return res.json(); })
-            .then(function(data){
-                if(!data.ok){ return; }
-                currentOffice = office;
-                auditTbody.innerHTML = data.html;
-                auditTitle.textContent = data.title;
-                // Add Row stays hidden on "All Offices" -- a new recommendation
-                // has to belong to one office, so there is nothing to file it under.
-                if(addRowBtn){ addRowBtn.style.display = office === '' ? 'none' : ''; }
-                var newUrl = 'home.php?audit=' + encodeURIComponent(selectedAudit) + (office !== '' ? '&office=' + encodeURIComponent(office) : '') + '#audit-recommendations';
-                window.history.replaceState(null, '', newUrl);
-            })
-            .catch(function(){
-                auditTbody.innerHTML = "<tr><td colspan='7' class='empty-state'>Unable to load recommendations right now.</td></tr>";
-            });
+        // Switching office always starts at that office's top level.
+        loadGrid(office, '', '');
     });
+
+    // Cards are replaced wholesale on every load, so listen on the table body
+    // rather than binding each one.
+    auditTbody.addEventListener('click', function(e){
+        var program = e.target.closest('.prog-card');
+        if(program){
+            loadGrid(program.getAttribute('data-office') || currentOffice,
+                     program.getAttribute('data-program') || '', '');
+            return;
+        }
+
+        var area = e.target.closest('.area-card');
+        if(area){
+            loadGrid(area.getAttribute('data-office') || currentOffice,
+                     area.getAttribute('data-program') || currentProgram,
+                     area.getAttribute('data-area') || '');
+        }
+    });
+
+    if(backBtn){
+        backBtn.addEventListener('click', function(){
+            // One level at a time: an area returns to its programme's areas,
+            // a programme returns to the programme cards.
+            if(currentArea !== ''){
+                loadGrid(currentOffice, currentProgram, '');
+            } else {
+                loadGrid(currentOffice, '', '');
+            }
+        });
+    }
 })();
 </script>
 <?php render_edit_toggle(); ?>

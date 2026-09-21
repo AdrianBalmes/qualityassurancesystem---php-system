@@ -1,7 +1,41 @@
 <?php
 
-function fetch_office_recommendations($conn, $selectedOffice, $selectedAudit){
-    if($selectedOffice !== ''){
+require_once __DIR__ . "/audit_areas.php";
+
+/**
+ * $selectedArea narrows an office that files its recommendations by area.
+ * AUDIT_AREA_UNASSIGNED collects the ones with no area set, so they stay
+ * reachable rather than disappearing between the area cards.
+ */
+function fetch_office_recommendations($conn, $selectedOffice, $selectedAudit, $selectedArea = '', $selectedProgram = ''){
+    if($selectedOffice !== '' && $selectedArea !== ''){
+        // A programmed office needs both: the same area name appears under
+        // more than one programme, so area alone would mix them together.
+        $programClause = $selectedProgram !== '' ? " AND program = ?" : "";
+
+        if($selectedArea === AUDIT_AREA_UNASSIGNED){
+            $stmt = $conn->prepare("SELECT * FROM audit_recommendations
+                                     WHERE office = ? AND audit_type = ?
+                                       AND (area IS NULL OR area = ''){$programClause}
+                                  ORDER BY year DESC, id DESC");
+            if($selectedProgram !== ''){
+                $stmt->bind_param("sss", $selectedOffice, $selectedAudit, $selectedProgram);
+            } else {
+                $stmt->bind_param("ss", $selectedOffice, $selectedAudit);
+            }
+        } else {
+            $stmt = $conn->prepare("SELECT * FROM audit_recommendations
+                                     WHERE office = ? AND audit_type = ? AND area = ?{$programClause}
+                                  ORDER BY year DESC, id DESC");
+            if($selectedProgram !== ''){
+                $stmt->bind_param("ssss", $selectedOffice, $selectedAudit, $selectedArea, $selectedProgram);
+            } else {
+                $stmt->bind_param("sss", $selectedOffice, $selectedAudit, $selectedArea);
+            }
+        }
+        $stmt->execute();
+        $result = $stmt->get_result();
+    } elseif($selectedOffice !== ''){
         $stmt = $conn->prepare("SELECT * FROM audit_recommendations WHERE office = ? AND audit_type = ? ORDER BY year DESC, id DESC");
         $stmt->bind_param("ss", $selectedOffice, $selectedAudit);
         $stmt->execute();
@@ -93,6 +127,72 @@ function render_office_recommendation_rows($rows, $selectedOffice, $selectedAudi
         $html = "<tr><td colspan='7' class='empty-state'>" . htmlspecialchars($emptyMessage, ENT_QUOTES) . "</td></tr>";
     }
     return ['html' => $html, 'count' => $count];
+}
+
+/**
+ * The area cards an office-with-areas shows instead of a recommendation list.
+ *
+ * They live inside one full-width table cell so the dashboard can swap them in
+ * and out of the existing grid without rebuilding the table around them.
+ */
+function render_program_cards($conn, $office, $auditType){
+    $counts = audit_program_counts($conn, $office, $auditType);
+    $programs = audit_programs_for_office($office);
+    $safeOffice = htmlspecialchars($office, ENT_QUOTES);
+
+    $cards = "";
+    foreach($counts as $program => $tally){
+        $safeProgram = htmlspecialchars($program, ENT_QUOTES);
+        $accent = $program === AUDIT_AREA_UNASSIGNED ? 'steel' : ($programs[$program]['accent'] ?? 'blue');
+        $areaCount = count($programs[$program]['areas'] ?? []);
+        $total = (int) $tally['total'];
+        $pending = (int) $tally['pending'];
+
+        $meta = $areaCount > 0
+            ? "<span class='prog-areas'>{$areaCount} area" . ($areaCount === 1 ? '' : 's') . "</span>"
+            : "";
+        $meta .= $total > 0
+            ? "<span class='area-total'>{$total} recommendation" . ($total === 1 ? '' : 's') . "</span>"
+              . ($pending > 0 ? "<span class='area-pending'>{$pending} pending</span>" : "")
+            : "<span class='area-empty'>No recommendations yet</span>";
+
+        $cards .= "<button type='button' class='prog-card prog-{$accent}' data-program='{$safeProgram}' data-office='{$safeOffice}'>"
+                . "<span class='prog-icon'><i class='bi bi-folder-fill'></i></span>"
+                . "<span class='prog-body'><span class='prog-name'>{$safeProgram}</span>"
+                . "<span class='area-tally'>{$meta}</span></span>"
+                . "<i class='bi bi-chevron-right prog-go'></i>"
+                . "</button>";
+    }
+
+    return "<tr><td colspan='7' class='area-cell'><div class='prog-grid'>{$cards}</div></td></tr>";
+}
+
+/** $program is '' for an office whose areas are not grouped, such as BED. */
+function render_area_cards($conn, $office, $auditType, $program = ''){
+    $counts = audit_area_counts($conn, $office, $auditType, $program);
+    $accent = $program !== '' ? audit_program_accent($office, $program) : 'blue';
+    $safeOffice = htmlspecialchars($office, ENT_QUOTES);
+    $safeProgram = htmlspecialchars($program, ENT_QUOTES);
+
+    $cards = "";
+    foreach($counts as $area => $tally){
+        $safeArea = htmlspecialchars($area, ENT_QUOTES);
+        $total = (int) $tally['total'];
+        $pending = (int) $tally['pending'];
+        $unassigned = $area === AUDIT_AREA_UNASSIGNED ? ' area-card-unassigned' : '';
+
+        $tally = $total === 0
+            ? "<span class='area-empty'>No recommendations yet</span>"
+            : "<span class='area-total'>{$total} recommendation" . ($total === 1 ? '' : 's') . "</span>"
+              . ($pending > 0 ? "<span class='area-pending'>{$pending} pending</span>" : "");
+
+        $cards .= "<button type='button' class='area-card area-{$accent}{$unassigned}' data-area='{$safeArea}' data-office='{$safeOffice}' data-program='{$safeProgram}'>"
+                . "<span class='area-name'>{$safeArea}</span>"
+                . "<span class='area-tally'>{$tally}</span>"
+                . "</button>";
+    }
+
+    return "<tr><td colspan='7' class='area-cell'><div class='area-grid'>{$cards}</div></td></tr>";
 }
 
 /** Heading for the recommendations grid. An empty office means every office. */

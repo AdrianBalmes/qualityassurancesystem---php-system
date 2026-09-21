@@ -6,6 +6,11 @@
 
 Options -Indexes
 
+# The front door is the landing page, not the login form. router.php does the
+# same for `php -S`; index.php stays the office login so every redirect to it
+# keeps working.
+DirectoryIndex landing.php index.php
+
 # Dotfiles and anything that is data or documentation rather than the site.
 # FilesMatch is core Apache, so this holds even if no extra modules load.
 <FilesMatch "(?i)(^\.|\.(sql|md|log|ini|bak|env|json|lock|dist)$|^router\.php$)">

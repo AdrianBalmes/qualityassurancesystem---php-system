@@ -67,8 +67,15 @@ CREATE TABLE `audit_recommendations` (
   `created_at` datetime DEFAULT current_timestamp(),
   `review_remarks` text DEFAULT '',
   `reviewed_by` varchar(50) DEFAULT '',
-  `reviewed_at` datetime DEFAULT NULL
+  `reviewed_at` datetime DEFAULT NULL,
+  `area` varchar(120) NOT NULL DEFAULT '',
+  `program` varchar(120) NOT NULL DEFAULT '',
+  `in_charge` text DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- `in_charge` holds a JSON array of office/person names, e.g. ["BED","Juan Dela Cruz"].
+--
 
 --
 -- `status` values: Pending, Not Submitted, Submitted (awaiting review),

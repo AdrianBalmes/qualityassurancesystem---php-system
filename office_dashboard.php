@@ -6,7 +6,7 @@ require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/content_helper.php";
 require_once __DIR__ . "/audit_classification.php";
 require_once __DIR__ . "/office_directory.php";
-require_once __DIR__ . "/recommendation_status.php";
+require_once __DIR__ . "/recommendation_rules.php";
 require_once __DIR__ . "/audit_log_helper.php";
 require_once __DIR__ . "/review_columns.php";
 require_once __DIR__ . "/onedrive_sync.php";
@@ -76,13 +76,12 @@ if(isset($_POST['submit_compliance'])){
     $recId = intval($_POST['recommendation_id'] ?? 0);
     $complianceResponse = trim($_POST['compliance_response'] ?? '');
 
-    $ownStmt = $conn->prepare("SELECT id, year, status FROM audit_recommendations WHERE id = ? AND office = ? LIMIT 1");
-    $ownStmt->bind_param("is", $recId, $office);
+    $ownStmt = $conn->prepare("SELECT * FROM audit_recommendations WHERE id = ? LIMIT 1");
+    $ownStmt->bind_param("i", $recId);
     $ownStmt->execute();
     $ownedRec = $ownStmt->get_result()->fetch_assoc();
-    $ownsRow = $ownedRec !== null;
 
-    if(!$ownsRow){
+    if(!$ownedRec || !recommendation_involves_office($ownedRec, $office)){
         office_dashboard_redirect($office, $officeDashboardUrl, 'That recommendation does not belong to your office.');
     }
 
@@ -93,8 +92,11 @@ if(isset($_POST['submit_compliance'])){
         office_dashboard_redirect($office, $officeDashboardUrl . "#recommendations", 'This recommendation is already marked Completed, so it can no longer be changed. Contact the QA office if it needs to be reopened.');
     }
 
-    $updateStmt = $conn->prepare("UPDATE audit_recommendations SET remarks = ?, status = 'Submitted' WHERE id = ? AND office = ?");
-    $updateStmt->bind_param("sis", $complianceResponse, $recId, $office);
+    // Merged rather than overwritten: a recommendation passed to an In Charge
+    // office keeps the owning office's remarks intact alongside this one.
+    $remarksToStore = merge_office_remarks($ownedRec, $office, $complianceResponse);
+    $updateStmt = $conn->prepare("UPDATE audit_recommendations SET remarks = ?, status = 'Submitted' WHERE id = ?");
+    $updateStmt->bind_param("si", $remarksToStore, $recId);
     $updateStmt->execute();
 
     log_audit_event($conn, $_SESSION['office_username'], 'office', $office, 'compliance_submitted', 'recommendation', $recId, "{$office} submitted a compliance response for recommendation #{$recId}");
@@ -155,14 +157,25 @@ if(isset($_POST['submit_compliance'])){
 $flashMessage = $_SESSION['office_flash'][$office] ?? '';
 unset($_SESSION['office_flash'][$office]);
 
-$recStmt = $conn->prepare("SELECT * FROM audit_recommendations WHERE office = ? ORDER BY year DESC, id DESC");
+// An admin can also put this office in charge of a recommendation that
+// belongs to a different office; those show up here too, alongside its own.
+$recStmt = $conn->prepare("SELECT * FROM audit_recommendations
+                            WHERE office = ? OR (in_charge IS NOT NULL AND in_charge <> '' AND in_charge <> '[]')
+                         ORDER BY year DESC, id DESC");
 $recStmt->bind_param("s", $office);
 $recStmt->execute();
-$recommendations = $recStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$recommendations = array_values(array_filter(
+    $recStmt->get_result()->fetch_all(MYSQLI_ASSOC),
+    function($row) use ($office){ return recommendation_involves_office($row, $office); }
+));
 $recStats = compute_recommendation_stats($recommendations);
 
 $recIds = array_map(function($row){ return (int) $row['id']; }, $recommendations);
 $docsByRecommendation = [];
+$recOfficeById = [];
+foreach($recommendations as $recRow){
+    $recOfficeById[(int) $recRow['id']] = $recRow['office'];
+}
 if(!empty($recIds)){
     $placeholders = implode(',', array_fill(0, count($recIds), '?'));
     $docTypes = str_repeat('i', count($recIds));
@@ -171,7 +184,13 @@ if(!empty($recIds)){
     $docStmt->execute();
     $docResult = $docStmt->get_result();
     while($docRow = $docResult->fetch_assoc()){
-        $docsByRecommendation[(int) $docRow['recommendation_id']][] = $docRow;
+        // College Department compliance goes to the admin only: an office
+        // sees the documents it submitted itself, never another office's.
+        $docRecId = (int) $docRow['recommendation_id'];
+        if(college_department_is_private($recOfficeById[$docRecId] ?? '') && $docRow['office'] !== $office){
+            continue;
+        }
+        $docsByRecommendation[$docRecId][] = $docRow;
     }
 }
 
@@ -374,13 +393,30 @@ img,canvas,svg{max-width:100%}
                     foreach($recommendations as $row){
                         $recId = (int) $row['id'];
                         $recText = nl2br(htmlspecialchars($row['recommendation'], ENT_QUOTES));
-                        $statusInfo = review_status_chip_info($row['status']);
+                        if($row['office'] !== $office){
+                            $recText .= "<div class='muted-copy' style='margin-top:4px'><i class='bi bi-arrow-return-right'></i> Assigned to your office &mdash; owned by " . htmlspecialchars($row['office'], ENT_QUOTES) . "</div>";
+                        }
+                        // Only this office's own remarks -- a recommendation passed to
+                        // more than one office keeps each one's submission separate.
+                        $ownRemarks = office_own_remarks($row, $office);
+                        $remarksDisplay = $ownRemarks !== '' ? nl2br(htmlspecialchars($ownRemarks, ENT_QUOTES)) : '<span class="muted-copy">Not submitted yet</span>';
+                        $safeRemarksValue = htmlspecialchars($ownRemarks, ENT_QUOTES);
+
+                        // College Department: status and feedback come from this
+                        // office's own submission only, never the shared row.
+                        $shownStatus = $row['status'];
+                        $shownFeedback = $row['review_remarks'] ?? '';
+                        if(college_department_is_private($row['office'])){
+                            $privateView = private_office_view($row, $docsByRecommendation[$recId] ?? [], $ownRemarks);
+                            $shownStatus = $privateView['status'];
+                            $shownFeedback = $privateView['feedback'];
+                        }
+
+                        $statusInfo = review_status_chip_info($shownStatus);
                         $label = $statusInfo['label'];
                         $chipClass = $statusInfo['class'];
                         $year = $row['year'] !== '' ? htmlspecialchars($row['year'], ENT_QUOTES) : '&mdash;';
-                        $remarksDisplay = $row['remarks'] !== null && $row['remarks'] !== '' ? nl2br(htmlspecialchars($row['remarks'], ENT_QUOTES)) : '<span class="muted-copy">Not submitted yet</span>';
-                        $safeRemarksValue = htmlspecialchars($row['remarks'] ?? '', ENT_QUOTES);
-                        $reviewFeedbackDisplay = !empty($row['review_remarks']) ? nl2br(htmlspecialchars($row['review_remarks'], ENT_QUOTES)) : '<span class="muted-copy">No feedback yet</span>';
+                        $reviewFeedbackDisplay = !empty($shownFeedback) ? nl2br(htmlspecialchars($shownFeedback, ENT_QUOTES)) : '<span class="muted-copy">No feedback yet</span>';
 
                         // Completed is final for the office (the server refuses it too).
                         $actionHtml = $row['status'] === 'Completed'

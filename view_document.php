@@ -61,7 +61,9 @@ $dashboardUrl = $isAdmin ? "home.php" : "office_dashboard.php?office=" . urlenco
 $canEmbed = in_array($fileExt, ['pdf', 'jpg', 'jpeg', 'png'], true);
 $canUseOfficeViewer = in_array($fileExt, ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'], true) && !empty($doc['file_link']);
 $officeViewerUrl = $canUseOfficeViewer ? "https://view.officeapps.live.com/op/embed.aspx?src=" . rawurlencode($doc['file_link']) : "";
-$scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https" : "http";
+// app_request_is_https() (session_bootstrap.php) sees through the Cloudflare
+// tunnel, which hands this server plain HTTP even for an https:// visitor.
+$scheme = app_request_is_https() ? "https" : "http";
 $basePath = rtrim(str_replace("\\", "/", dirname($_SERVER['SCRIPT_NAME'])), "/");
 // Word downloads the file itself, without the login cookie, so it is given a
 // link that works for 15 minutes. The trailing name keeps the file type visible.

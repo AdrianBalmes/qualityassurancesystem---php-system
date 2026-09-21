@@ -1,0 +1,39 @@
+# Cloudflare Tunnel config for the QA system.
+#
+# Copy to  C:\Users\<you>\.cloudflared\config.yml  and replace <TUNNEL-UUID>
+# with the id printed by `cloudflared tunnel create qa-system`.
+#
+# Setup, once sbc-quality-assurance.com is active in your Cloudflare account:
+#
+#   cloudflared tunnel login                       # pick the new zone
+#   cloudflared tunnel create qa-system            # prints the UUID
+#   copy this file to .cloudflared\config.yml and edit it
+#   cloudflared tunnel route dns qa-system sbc-quality-assurance.com
+#   cloudflared tunnel route dns qa-system www.sbc-quality-assurance.com
+#   cloudflared service install                    # run as Administrator
+#
+# `service install` is what makes the site come back after a reboot without
+# anyone signing in to this PC.
+
+tunnel: <TUNNEL-UUID>
+credentials-file: C:\Users\<YOUR-USER>\.cloudflared\<TUNNEL-UUID>.json
+
+# Apache listens on 127.0.0.1:80 only (httpd.conf), so the tunnel is the sole
+# way in. The QA vhost answers to this hostname; localhost still serves htdocs.
+ingress:
+  - hostname: sbc-quality-assurance.com
+    service: http://127.0.0.1:80
+    originRequest:
+      httpHostHeader: sbc-quality-assurance.com
+      # Uploads are capped at 40 MB by PHP, well inside Cloudflare's limits,
+      # but a slow connection still needs time to finish sending.
+      connectTimeout: 30s
+
+  - hostname: www.sbc-quality-assurance.com
+    service: http://127.0.0.1:80
+    originRequest:
+      httpHostHeader: sbc-quality-assurance.com
+      connectTimeout: 30s
+
+  # Required last rule: anything else gets a 404 instead of reaching Apache.
+  - service: http_status:404

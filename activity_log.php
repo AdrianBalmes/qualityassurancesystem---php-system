@@ -70,11 +70,12 @@ if($filterTo !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $filterTo)){
     $types .= "s";
 }
 if($filterQuery !== ''){
-    $conditions[] = "(description LIKE ? OR actor_username LIKE ?)";
+    $conditions[] = "(description LIKE ? OR actor_username LIKE ? OR actor_full_name LIKE ?)";
     $likeTerm = "%" . $filterQuery . "%";
     $params[] = $likeTerm;
     $params[] = $likeTerm;
-    $types .= "ss";
+    $params[] = $likeTerm;
+    $types .= "sss";
 }
 
 $whereSql = !empty($conditions) ? " WHERE " . implode(" AND ", $conditions) : "";
@@ -93,7 +94,7 @@ if(isset($_GET['export']) && $_GET['export'] === 'csv'){
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="activity_log_' . date('Ymd_His') . '.csv"');
     $out = fopen('php://output', 'w');
-    fputcsv($out, ['Date/Time', 'Actor', 'Role', 'Office', 'Action', 'Description', 'IP Address']);
+    fputcsv($out, ['Date/Time', 'Username', 'Full Name', 'Role', 'Office', 'Action', 'Description', 'IP Address']);
     // Excel runs a cell starting with = + - or @ as a formula, and descriptions
     // carry text anyone can type at registration (their "full name"). A
     // leading apostrophe makes Excel show it as plain text instead.
@@ -103,7 +104,7 @@ if(isset($_GET['export']) && $_GET['export'] === 'csv'){
     };
     while($row = $result->fetch_assoc()){
         $actionLabel = $knownActions[$row['action']] ?? $row['action'];
-        fputcsv($out, array_map($csvCell, [$row['created_at'], $row['actor_username'], $row['actor_role'], $row['office'], $actionLabel, $row['description'], $row['ip_address']]));
+        fputcsv($out, array_map($csvCell, [$row['created_at'], $row['actor_username'], $row['actor_full_name'] ?? '', $row['actor_role'], $row['office'], $actionLabel, $row['description'], $row['ip_address']]));
     }
     fclose($out);
     exit();
@@ -236,7 +237,7 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
         </div>
         <div class="filter-field" style="flex:1;min-width:180px">
             <label for="filterQuery">Search</label>
-            <input type="text" name="q" id="filterQuery" placeholder="Actor or description..." value="<?php echo htmlspecialchars($filterQuery, ENT_QUOTES); ?>">
+            <input type="text" name="q" id="filterQuery" placeholder="Name, username or description..." value="<?php echo htmlspecialchars($filterQuery, ENT_QUOTES); ?>">
         </div>
         <div class="filter-actions">
             <button type="submit" class="btn-primary-sm"><i class="bi bi-funnel-fill"></i> Filter</button>
@@ -250,7 +251,7 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
             <thead>
                 <tr>
                     <th style="width:160px">Date/Time</th>
-                    <th style="width:140px">Actor</th>
+                    <th style="width:190px">Actor</th>
                     <th style="width:110px">Office</th>
                     <th style="width:170px">Action</th>
                     <th>Description</th>
@@ -266,7 +267,20 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
                 ?>
                 <tr>
                     <td><?php echo htmlspecialchars($whenLabel, ENT_QUOTES); ?></td>
-                    <td><strong><?php echo htmlspecialchars($log['actor_username'], ENT_QUOTES); ?></strong><div class="muted-copy"><?php echo htmlspecialchars(ucfirst($log['actor_role']), ENT_QUOTES); ?></div></td>
+                    <?php
+                    // Accounts created before full names existed, and failed
+                    // sign-ins with a username nobody owns, have no name to
+                    // show -- the username stands in as the heading instead.
+                    $actorName = trim((string) ($log['actor_full_name'] ?? ''));
+                    $actorHeading = $actorName !== '' ? $actorName : $log['actor_username'];
+                    // Each piece is escaped on its own so the separator stays
+                    // markup rather than being shown as literal "&middot;".
+                    $actorSub = htmlspecialchars(ucfirst($log['actor_role']), ENT_QUOTES);
+                    if($actorName !== ''){
+                        $actorSub = htmlspecialchars($log['actor_username'], ENT_QUOTES) . ' &middot; ' . $actorSub;
+                    }
+                    ?>
+                    <td><strong><?php echo htmlspecialchars($actorHeading, ENT_QUOTES); ?></strong><div class="muted-copy"><?php echo $actorSub; ?></div></td>
                     <td><?php echo $log['office'] !== '' ? htmlspecialchars($log['office'], ENT_QUOTES) : '&mdash;'; ?></td>
                     <td><span class="action-chip <?php echo $chipClass; ?>"><?php echo htmlspecialchars($actionLabel, ENT_QUOTES); ?></span></td>
                     <td class="log-desc"><?php echo htmlspecialchars($log['description'], ENT_QUOTES); ?></td>

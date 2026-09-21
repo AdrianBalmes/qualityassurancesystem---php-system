@@ -35,6 +35,7 @@ CREATE TABLE `app_settings` (
 CREATE TABLE `audit_log` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `actor_username` varchar(50) NOT NULL,
+  `actor_full_name` varchar(120) NOT NULL DEFAULT '',
   `actor_role` varchar(20) NOT NULL,
   `office` varchar(100) DEFAULT '',
   `action` varchar(50) NOT NULL,

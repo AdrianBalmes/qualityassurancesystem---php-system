@@ -1,7 +1,8 @@
 <?php
 /**
- * Add the review-workflow columns to audit_recommendations if an older
- * database lacks them, and widen the original status enum.
+ * Add the review-workflow and accreditation-area columns to
+ * audit_recommendations if an older database lacks them, and widen the
+ * original status enum.
  *
  * Uses SHOW COLUMNS rather than a SELECT probe: since PHP 8.1 mysqli throws on
  * a failed query instead of returning false, so probing a missing column
@@ -19,6 +20,13 @@ function ensure_review_columns($conn){
         'review_remarks' => "text",
         'reviewed_by'    => "varchar(50) DEFAULT ''",
         'reviewed_at'    => "datetime DEFAULT NULL",
+        // The external audit files each recommendation under an accreditation
+        // area, and under a programme for offices that have them. Definitions
+        // match ems_db.sql; a database created before this feature has neither,
+        // and every area query selects them by name.
+        'area'           => "varchar(120) NOT NULL DEFAULT ''",
+        'program'        => "varchar(120) NOT NULL DEFAULT ''",
+        'in_charge'      => "text",
     ];
     foreach($columns as $column => $definition){
         $result = mysqli_query($conn, "SHOW COLUMNS FROM audit_recommendations LIKE '{$column}'");

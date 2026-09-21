@@ -1,63 +1,58 @@
--- phpMyAdmin SQL Dump
--- version 5.2.1
--- https://www.phpmyadmin.net/
+-- SBC Quality Assurance system -- database structure.
 --
--- Host: 127.0.0.1
--- Generation Time: Apr 29, 2026 at 07:06 AM
--- Server version: 10.4.32-MariaDB
--- PHP Version: 8.1.25
-
-SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
-START TRANSACTION;
-SET time_zone = "+00:00";
+-- Structure only: no accounts, no data. Import it into an empty database and
+-- the app fills in the rest --
+--   * the office list seeds itself on first page load (ensure_offices_table)
+--   * missing columns are added on page load (ensure_*_columns)
+--
+-- Create the first administrator with:
+--   php tools/create_admin.php <username>
+--
+-- Real recommendations, documents and accounts are NOT in git. To move them
+-- between machines see "What does not travel through git" in SETUP.md.
 
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
 /*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
 /*!40101 SET NAMES utf8mb4 */;
-
---
--- Database: `ems_db`
---
-
--- --------------------------------------------------------
-
---
--- Table structure for table `documents`
---
-
-CREATE TABLE `documents` (
-  `id` int(11) NOT NULL,
-  `office` varchar(100) NOT NULL,
-  `title` varchar(200) NOT NULL,
-  `status` enum('Implemented','Partially','Not Implemented') NOT NULL,
-  `file_name` varchar(255) NOT NULL,
-  `approval_status` enum('Pending','Approved','Rejected') DEFAULT 'Pending',
-  `file_link` text DEFAULT NULL
+/*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+/*!40103 SET TIME_ZONE='+00:00' */;
+/*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `app_settings` (
+  `setting_key` varchar(64) NOT NULL,
+  `setting_value` text NOT NULL,
+  PRIMARY KEY (`setting_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
---
--- Dumping data for table `documents`
---
-
-INSERT INTO `documents` (`id`, `office`, `title`, `status`, `file_name`, `approval_status`, `file_link`) VALUES
-(6, 'Registrar', 'collegefair', 'Implemented', 'capstone7-updated-chapter1-2.docx', 'Rejected', NULL),
-(7, 'Registrar', 'capstone', 'Partially', 'compliance-matrix.docx', 'Rejected', NULL),
-(8, 'Finance', 'DOCX', 'Partially', 'Balmes-ouput-prototype.NEW (1).docx', 'Rejected', NULL),
-(9, 'Finance', 'card', 'Implemented', 'vans.jpg', 'Approved', NULL),
-(10, 'Registrar', 'card', 'Implemented', 'vans.jpg', 'Pending', NULL),
-(11, 'Registrar', 'grades', 'Implemented', 'vans.jpg', 'Pending', NULL),
-(12, 'Registrar', 'gggggg', 'Partially', 'QA-dashboard.png', 'Pending', NULL);
-
--- --------------------------------------------------------
-
---
--- Table structure for table `audit_recommendations`
---
-
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `audit_log` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `actor_username` varchar(50) NOT NULL,
+  `actor_role` varchar(20) NOT NULL,
+  `office` varchar(100) DEFAULT '',
+  `action` varchar(50) NOT NULL,
+  `entity_type` varchar(30) DEFAULT '',
+  `entity_id` int(11) DEFAULT NULL,
+  `description` text DEFAULT NULL,
+  `ip_address` varchar(45) DEFAULT '',
+  `created_at` datetime DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `action` (`action`),
+  KEY `office` (`office`),
+  KEY `created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `audit_recommendations` (
-  `id` int(11) NOT NULL,
+  `id` int(11) NOT NULL AUTO_INCREMENT,
   `audit_type` enum('External','Internal') NOT NULL,
   `office` varchar(100) NOT NULL,
   `recommendation` text NOT NULL,
@@ -70,54 +65,143 @@ CREATE TABLE `audit_recommendations` (
   `reviewed_at` datetime DEFAULT NULL,
   `area` varchar(120) NOT NULL DEFAULT '',
   `program` varchar(120) NOT NULL DEFAULT '',
-  `in_charge` text DEFAULT NULL
+  `in_charge` text DEFAULT NULL,
+  PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
---
--- `in_charge` holds a JSON array of office/person names, e.g. ["BED","Juan Dela Cruz"].
---
-
---
--- `status` values: Pending, Not Submitted, Submitted (awaiting review),
--- Approved, Needs Revision, Rejected, Completed.
---
-
--- --------------------------------------------------------
-
---
--- Table structure for table `feedback`
---
-
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `documents` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `office` varchar(100) NOT NULL,
+  `title` varchar(200) NOT NULL,
+  `status` enum('Implemented','Partially','Not Implemented') NOT NULL,
+  `file_name` varchar(255) NOT NULL,
+  `approval_status` enum('Pending','Approved','Rejected') DEFAULT 'Pending',
+  `file_link` text DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `feedback` (
-  `id` int(11) NOT NULL,
+  `id` int(11) NOT NULL AUTO_INCREMENT,
   `document_id` int(11) NOT NULL,
   `office` varchar(100) NOT NULL,
   `message` text NOT NULL,
-  `date_sent` datetime DEFAULT current_timestamp()
+  `date_sent` datetime DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- --------------------------------------------------------
-
---
--- Table structure for table `tasks`
---
-
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `offices` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(100) NOT NULL,
+  `audit_type` varchar(20) NOT NULL DEFAULT 'Internal',
+  `created_at` datetime DEFAULT current_timestamp(),
+  `created_by` varchar(50) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `onedrive_sync` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `source_table` varchar(50) NOT NULL,
+  `source_id` int(11) NOT NULL,
+  `office` varchar(100) NOT NULL DEFAULT '',
+  `local_file_name` varchar(255) NOT NULL,
+  `original_name` varchar(255) NOT NULL DEFAULT '',
+  `remote_path` varchar(600) NOT NULL DEFAULT '',
+  `status` varchar(20) NOT NULL DEFAULT 'pending',
+  `attempts` int(11) NOT NULL DEFAULT 0,
+  `last_error` text DEFAULT NULL,
+  `onedrive_item_id` varchar(120) DEFAULT NULL,
+  `onedrive_web_url` text DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `source_file` (`source_table`,`source_id`,`local_file_name`),
+  KEY `status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `onedrive_tokens` (
+  `id` tinyint(1) NOT NULL DEFAULT 1,
+  `access_token` text NOT NULL,
+  `expires_at` datetime NOT NULL,
+  `updated_at` datetime DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `password_resets` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL,
+  `token_hash` varchar(64) NOT NULL,
+  `expires_at` datetime NOT NULL,
+  `used_at` datetime DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `attempts` int(11) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  KEY `token_hash` (`token_hash`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `recommendation_documents` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `recommendation_id` int(11) NOT NULL,
+  `office` varchar(100) NOT NULL,
+  `file_name` varchar(255) NOT NULL,
+  `original_name` varchar(255) NOT NULL,
+  `uploaded_at` datetime DEFAULT current_timestamp(),
+  `review_status` varchar(20) DEFAULT NULL,
+  `review_remarks` text DEFAULT NULL,
+  `reviewed_by` varchar(50) DEFAULT NULL,
+  `reviewed_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `site_content` (
+  `content_key` varchar(150) NOT NULL,
+  `content_value` text NOT NULL,
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`content_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `sms_outbox` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `phone` varchar(30) NOT NULL,
+  `message` text NOT NULL,
+  `status` varchar(30) NOT NULL DEFAULT 'pending',
+  `created_at` datetime DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `tasks` (
-  `id` int(11) NOT NULL,
+  `id` int(11) NOT NULL AUTO_INCREMENT,
   `task_name` varchar(200) NOT NULL,
   `office` varchar(100) NOT NULL,
   `due_date` date NOT NULL,
-  `status` enum('Implemented','Partially','Not Implemented') NOT NULL
+  `status` enum('Implemented','Partially','Not Implemented') NOT NULL,
+  PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- --------------------------------------------------------
-
---
--- Table structure for table `users`
---
-
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `users` (
-  `id` int(11) NOT NULL,
+  `id` int(11) NOT NULL AUTO_INCREMENT,
   `username` varchar(50) NOT NULL,
   `password` varchar(100) NOT NULL,
   `email` varchar(100) NOT NULL,
@@ -126,195 +210,23 @@ CREATE TABLE `users` (
   `office` varchar(100) NOT NULL,
   `profile_photo` varchar(255) DEFAULT '',
   `created_at` datetime DEFAULT current_timestamp(),
-  `last_login` datetime DEFAULT NULL
+  `last_login` datetime DEFAULT NULL,
+  `full_name` varchar(120) NOT NULL DEFAULT '',
+  `status` varchar(20) NOT NULL DEFAULT 'approved',
+  `reviewed_by` varchar(50) DEFAULT NULL,
+  `reviewed_at` datetime DEFAULT NULL,
+  `review_reason` text DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `username_unique` (`username`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+/*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
---
--- Dumping data for table `users`
---
-
-INSERT INTO `users` (`id`, `username`, `password`, `email`, `phone`, `role`, `office`) VALUES
-(1, 'admin', 'admin@2026', 'adrianbalmes211@gmail.com', '', 'admin', 'Admin'),
-(2, 'user1', '12345', 'sannoelpodadera1@gmail.com', '', 'user', 'Faculty'),
-(3, 'reg1', '123456', '', '', 'user', 'Registrar'),
-(5, 'finance', '123456', '', '', 'user', 'Finance'),
-(6, 'cssao', 'cssao2026', '', '', 'user', 'CSSAO');
-
-
--- --------------------------------------------------------
-
---
--- Table structure for table `sms_outbox`
---
-
-CREATE TABLE `sms_outbox` (
-  `id` int(11) NOT NULL,
-  `phone` varchar(30) NOT NULL,
-  `message` text NOT NULL,
-  `status` varchar(30) NOT NULL DEFAULT 'pending',
-  `created_at` datetime DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- --------------------------------------------------------
-
---
--- Table structure for table `recommendation_documents`
---
-
-CREATE TABLE `recommendation_documents` (
-  `id` int(11) NOT NULL,
-  `recommendation_id` int(11) NOT NULL,
-  `office` varchar(100) NOT NULL,
-  `file_name` varchar(255) NOT NULL,
-  `original_name` varchar(255) NOT NULL,
-  `uploaded_at` datetime DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- --------------------------------------------------------
-
---
--- Table structure for table `audit_log`
---
-
-CREATE TABLE `audit_log` (
-  `id` int(11) NOT NULL,
-  `actor_username` varchar(50) NOT NULL,
-  `actor_role` varchar(20) NOT NULL,
-  `office` varchar(100) DEFAULT '',
-  `action` varchar(50) NOT NULL,
-  `entity_type` varchar(30) DEFAULT '',
-  `entity_id` int(11) DEFAULT NULL,
-  `description` text DEFAULT NULL,
-  `ip_address` varchar(45) DEFAULT '',
-  `created_at` datetime DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- --------------------------------------------------------
-
---
--- Table structure for table `site_content`
---
-
-CREATE TABLE `site_content` (
-  `content_key` varchar(150) NOT NULL,
-  `content_value` text NOT NULL,
-  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
---
--- Indexes for dumped tables
---
-
---
--- Indexes for table `audit_recommendations`
---
-ALTER TABLE `audit_recommendations`
-  ADD PRIMARY KEY (`id`);
-
---
--- Indexes for table `documents`
---
-ALTER TABLE `documents`
-  ADD PRIMARY KEY (`id`);
-
---
--- Indexes for table `feedback`
---
-ALTER TABLE `feedback`
-  ADD PRIMARY KEY (`id`);
-
---
--- Indexes for table `tasks`
---
-ALTER TABLE `tasks`
-  ADD PRIMARY KEY (`id`);
-
---
--- Indexes for table `users`
---
-ALTER TABLE `users`
-  ADD PRIMARY KEY (`id`);
-
---
--- Indexes for table `sms_outbox`
---
-ALTER TABLE `sms_outbox`
-  ADD PRIMARY KEY (`id`);
-
---
--- Indexes for table `site_content`
---
-ALTER TABLE `site_content`
-  ADD PRIMARY KEY (`content_key`);
-
---
--- Indexes for table `recommendation_documents`
---
-ALTER TABLE `recommendation_documents`
-  ADD PRIMARY KEY (`id`);
-
---
--- Indexes for table `audit_log`
---
-ALTER TABLE `audit_log`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `action` (`action`),
-  ADD KEY `office` (`office`),
-  ADD KEY `created_at` (`created_at`);
-
---
--- AUTO_INCREMENT for dumped tables
---
-
---
--- AUTO_INCREMENT for table `audit_recommendations`
---
-ALTER TABLE `audit_recommendations`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
-
---
--- AUTO_INCREMENT for table `documents`
---
-ALTER TABLE `documents`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=13;
-
---
--- AUTO_INCREMENT for table `feedback`
---
-ALTER TABLE `feedback`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
-
---
--- AUTO_INCREMENT for table `tasks`
---
-ALTER TABLE `tasks`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
-
---
--- AUTO_INCREMENT for table `users`
---
-ALTER TABLE `users`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
-
---
--- AUTO_INCREMENT for table `sms_outbox`
---
-ALTER TABLE `sms_outbox`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
-
---
--- AUTO_INCREMENT for table `recommendation_documents`
---
-ALTER TABLE `recommendation_documents`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
-
---
--- AUTO_INCREMENT for table `audit_log`
---
-ALTER TABLE `audit_log`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
-COMMIT;
-
+/*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+/*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+/*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
+

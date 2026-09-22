@@ -186,8 +186,32 @@ uploaded document to anyone who asks.
 PC, so nothing else needs to reach Apache directly, and the site is not exposed
 on whatever Wi-Fi this laptop joins.
 
-Restart Apache from the XAMPP Control Panel after changing any of this. Tick
-Apache and MySQL as **services** there so they come back after a reboot.
+Restart Apache from the XAMPP Control Panel after changing any of this.
+
+### Keeping it running
+
+Run **once, from an Administrator terminal**:
+
+```bash
+tools\install_services.bat
+```
+
+It installs Apache, MySQL and the tunnel as Windows services set to start with
+Windows, and registers a health check that runs every 5 minutes.
+
+This matters: on 2026-09-22 the site was unreachable for most of the day
+because Apache and MySQL had been stopped while the tunnel kept running, so
+Cloudflare had nothing to forward to and showed its "web server is down" page.
+Nothing was a service, so nothing restarted itself.
+
+`tools/health_check.bat` restarts any of the three that has stopped, and asks
+Apache for a real page rather than trusting the service state -- a server that
+is "running" but failing gets restarted too. It notes what it did in
+`qa-health.log` in the project folder (gitignored). An empty log means nothing
+has gone wrong.
+
+The real test is a reboot: restart the PC and the site should answer without
+anyone signing in to it.
 
 ### The tunnel
 

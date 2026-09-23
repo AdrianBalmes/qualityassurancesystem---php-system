@@ -57,7 +57,7 @@ CREATE TABLE `audit_recommendations` (
   `audit_type` enum('External','Internal') NOT NULL,
   `office` varchar(100) NOT NULL,
   `recommendation` text NOT NULL,
-  `year` varchar(4) NOT NULL,
+  `year` varchar(9) NOT NULL,
   `status` varchar(20) NOT NULL DEFAULT 'Pending',
   `remarks` text DEFAULT NULL,
   `created_at` datetime DEFAULT current_timestamp(),

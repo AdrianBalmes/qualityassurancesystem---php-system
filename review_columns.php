@@ -35,6 +35,14 @@ function ensure_review_columns($conn){
         }
     }
 
+    // A year used to be four digits. It can now also be a school year --
+    // "2026-2027" -- which varchar(4) would silently cut down to "2026".
+    $yearResult = mysqli_query($conn, "SHOW COLUMNS FROM audit_recommendations LIKE 'year'");
+    $yearInfo = $yearResult ? $yearResult->fetch_assoc() : null;
+    if($yearInfo && preg_match('/varchar\((\d+)\)/i', $yearInfo['Type'], $size) && (int) $size[1] < 9){
+        mysqli_query($conn, "ALTER TABLE audit_recommendations MODIFY year VARCHAR(9) NOT NULL DEFAULT ''");
+    }
+
     // College Department reviews one submitted document at a time, so each
     // document carries its own decision and remarks.
     $docTable = mysqli_query($conn, "SHOW TABLES LIKE 'recommendation_documents'");

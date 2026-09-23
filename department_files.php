@@ -182,7 +182,7 @@ body{margin:0;background:#f4f6f9;color:#26354b;font-family:-apple-system,BlinkMa
                             $recDisplay = $recText !== ''
                                 ? htmlspecialchars(mb_strimwidth($recText, 0, 160, '...'), ENT_QUOTES)
                                 : "<span style='color:#a7b0be'>Recommendation was deleted</span>";
-                            $year = $file['year'] !== null && $file['year'] !== '' ? htmlspecialchars($file['year'], ENT_QUOTES) : '&mdash;';
+                            $year = $file['year'] !== null && $file['year'] !== '' ? htmlspecialchars($file['year'], ENT_QUOTES) : '';
                             $uploaded = $file['uploaded_at'] !== null && $file['uploaded_at'] !== ''
                                 ? htmlspecialchars(date("M j, Y g:i A", strtotime($file['uploaded_at'])), ENT_QUOTES)
                                 : '&mdash;';

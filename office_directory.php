@@ -10,7 +10,8 @@
 
 /** The original hardcoded list, used only to seed an empty table. */
 const OFFICE_SEED = [
-    'Faculty' => 'Internal',
+    'Faculty - Elementary' => 'Internal',
+    'Faculty - High School' => 'Internal',
     'CSSAO' => 'Internal',
     'BED' => 'External',
     'SHS' => 'Internal',

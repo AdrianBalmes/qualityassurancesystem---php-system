@@ -6,9 +6,15 @@ require_once __DIR__ . "/audit_areas.php";
 require_once __DIR__ . "/office_directory.php";
 require_once __DIR__ . "/audit_log_helper.php";
 require_once __DIR__ . "/review_columns.php";
+require_once __DIR__ . "/in_charge.php";
 header('Content-Type: application/json');
 
-if(!isset($_SESSION['admin_username']) || $_SESSION['admin_role'] !== 'admin'){
+$action = $_POST['action'] ?? '';
+$isAdmin = isset($_SESSION['admin_username']) && $_SESSION['admin_role'] === 'admin';
+
+// Everything here is the administrator's, except naming who is in charge --
+// an office does that on its own recommendations.
+if(!$isAdmin && !($action === 'save_in_charge' && isset($_SESSION['office_username']))){
     http_response_code(403);
     echo json_encode(['ok' => false, 'error' => 'Unauthorized']);
     exit();
@@ -16,8 +22,31 @@ if(!isset($_SESSION['admin_username']) || $_SESSION['admin_role'] !== 'admin'){
 
 ensure_review_columns($conn);
 
-$adminUsername = $_SESSION['admin_username'];
-$action = $_POST['action'] ?? '';
+$adminUsername = $isAdmin ? $_SESSION['admin_username'] : '';
+
+/**
+ * Which office sign-in this request is acting as. One browser can hold several
+ * at once, so the page says which; anything it is not signed in as is refused.
+ */
+function acting_office_login(){
+    $requested = trim($_POST['office'] ?? '');
+    if($requested === ''){
+        return null;
+    }
+
+    $logins = isset($_SESSION['office_logins']) && is_array($_SESSION['office_logins']) ? $_SESSION['office_logins'] : [];
+    if(isset($logins[$requested])){
+        return $logins[$requested];
+    }
+    if(($_SESSION['office_name'] ?? '') === $requested){
+        return [
+            'username' => $_SESSION['office_username'] ?? '',
+            'office'   => $_SESSION['office_name'] ?? '',
+            'id'       => (int) ($_SESSION['office_user_id'] ?? 0),
+        ];
+    }
+    return null;
+}
 
 /**
  * Stop the OneDrive worker retrying files that no longer exist. Rows already
@@ -73,6 +102,95 @@ if($action === 'add_office_recommendation'){
     exit();
 }
 
+if($action === 'save_in_charge'){
+    $id = intval($_POST['id'] ?? 0);
+    if($id <= 0){
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Invalid row']);
+        exit();
+    }
+
+    $rowStmt = $conn->prepare("SELECT office, in_charge FROM audit_recommendations WHERE id = ? LIMIT 1");
+    $rowStmt->bind_param("i", $id);
+    $rowStmt->execute();
+    $row = $rowStmt->get_result()->fetch_assoc();
+    if(!$row){
+        http_response_code(404);
+        echo json_encode(['ok' => false, 'error' => 'That recommendation no longer exists']);
+        exit();
+    }
+
+    $stored = in_charge_decode($row['in_charge'] ?? '');
+
+    if($isAdmin){
+        $actorUsername = $adminUsername;
+        $actorRole = 'admin';
+        $actorOffice = $row['office'];
+        $ownsRecommendation = true;
+        $actingOffice = '';
+    } else {
+        // Anyone in the office may name who is in charge of that office's own
+        // recommendations. An office put in charge of someone else's may name
+        // its own people there too -- and nothing else, which is enforced
+        // below rather than trusted to the page.
+        $login = acting_office_login();
+        $actingOffice = $login['office'] ?? '';
+        $ownsRecommendation = $actingOffice !== '' && $actingOffice === $row['office'];
+        $isInCharge = $actingOffice !== '' && in_array($actingOffice, $stored, true);
+
+        if(!$login || (!$ownsRecommendation && !$isInCharge)){
+            http_response_code(403);
+            echo json_encode(['ok' => false, 'error' => "Only {$row['office']} can change who is in charge of this recommendation"]);
+            exit();
+        }
+
+        // The account may have been rejected since this page was opened.
+        $accountStmt = $conn->prepare("SELECT status, role, office FROM users WHERE id = ? LIMIT 1");
+        $accountId = (int) ($login['id'] ?? 0);
+        $accountStmt->bind_param("i", $accountId);
+        $accountStmt->execute();
+        $account = $accountStmt->get_result()->fetch_assoc();
+        if(!$account || user_login_block_reason($account) !== ''){
+            http_response_code(403);
+            echo json_encode(['ok' => false, 'error' => 'Your account can no longer sign in.']);
+            exit();
+        }
+
+        $actorUsername = $login['username'] ?? '';
+        $actorRole = 'office';
+        $actorOffice = $login['office'];
+    }
+
+    if($ownsRecommendation){
+        $inCharge = in_charge_encode_posted($_POST['in_charge'] ?? '');
+    } else {
+        // Only this office's own people are taken from the request. Every
+        // other name comes from what is stored, so a crafted post cannot
+        // rewrite the offices assigned or another office's people.
+        $ownStaff = in_charge_office_staff_names($conn, $actingOffice);
+        $posted = in_charge_decode($_POST['in_charge'] ?? '');
+        $kept = array_values(array_filter($stored, function($name) use ($ownStaff){
+            return !in_array($name, $ownStaff, true);
+        }));
+        $mine = array_values(array_filter($posted, function($name) use ($ownStaff){
+            return in_array($name, $ownStaff, true);
+        }));
+        $inCharge = in_charge_encode(array_merge($kept, $mine));
+    }
+
+    $update = $conn->prepare("UPDATE audit_recommendations SET in_charge = ? WHERE id = ?");
+    $update->bind_param("si", $inCharge, $id);
+    $update->execute();
+
+    $names = in_charge_decode($inCharge);
+    $who = !empty($names) ? implode(', ', $names) : 'nobody';
+    log_audit_event($conn, $actorUsername, $actorRole, $actorOffice, 'in_charge_updated', 'recommendation', $id,
+        "Set who is in charge of recommendation #{$id} ({$row['office']}) to {$who}");
+
+    echo json_encode(['ok' => true, 'in_charge' => $names]);
+    exit();
+}
+
 if($action === 'save_office_recommendation'){
     $id = intval($_POST['id'] ?? 0);
     $recommendation = trim($_POST['recommendation'] ?? '');
@@ -87,16 +205,7 @@ if($action === 'save_office_recommendation'){
 
     // Sent as a JSON array of office/person names; anything malformed or not a
     // plain string is dropped rather than rejecting the whole save.
-    $inChargeRaw = json_decode($_POST['in_charge'] ?? '', true);
-    $inChargeList = [];
-    if(is_array($inChargeRaw)){
-        foreach($inChargeRaw as $entry){
-            if(is_string($entry) && trim($entry) !== '' && mb_strlen($entry) <= 100){
-                $inChargeList[] = trim($entry);
-            }
-        }
-    }
-    $inCharge = json_encode(array_slice(array_values(array_unique($inChargeList)), 0, 20));
+    $inCharge = in_charge_encode_posted($_POST['in_charge'] ?? '');
 
     if($id <= 0){
         http_response_code(400);
@@ -108,22 +217,27 @@ if($action === 'save_office_recommendation'){
         echo json_encode(['ok' => false, 'error' => 'Invalid status']);
         exit();
     }
-    if($year !== '' && !preg_match('/^\d{4}$/', $year)){
+    // A single year or a school year. "2026 - 2027" is the same thing typed
+    // more loosely, so it is tidied rather than refused.
+    $year = preg_replace('/\s*-\s*/', '-', $year);
+    if($year !== '' && !preg_match('/^\d{4}(-\d{4})?$/', $year)){
         http_response_code(400);
-        echo json_encode(['ok' => false, 'error' => 'Year must be 4 digits']);
+        echo json_encode(['ok' => false, 'error' => 'Year must be 2026 or 2026-2027']);
         exit();
+    }
+    if(strpos($year, '-') !== false){
+        list($yearFrom, $yearTo) = explode('-', $year);
+        if((int) $yearTo <= (int) $yearFrom){
+            http_response_code(400);
+            echo json_encode(['ok' => false, 'error' => 'The second year has to come after the first']);
+            exit();
+        }
     }
 
     $beforeStmt = $conn->prepare("SELECT office, status FROM audit_recommendations WHERE id = ? LIMIT 1");
     $beforeStmt->bind_param("i", $id);
     $beforeStmt->execute();
     $beforeRow = $beforeStmt->get_result()->fetch_assoc();
-
-    // In Charge is an External Audit feature only; an Internal Audit office's
-    // row never carries one, regardless of what the request sent.
-    if($beforeRow && audit_type_for_office($beforeRow['office']) !== 'External'){
-        $inCharge = json_encode([]);
-    }
 
     if($remarksProvided){
         $stmt = $conn->prepare("UPDATE audit_recommendations SET recommendation = ?, status = ?, remarks = ?, year = ?, in_charge = ? WHERE id = ?");

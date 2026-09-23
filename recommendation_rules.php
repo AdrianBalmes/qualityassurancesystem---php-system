@@ -94,19 +94,35 @@ function private_office_view($row, $ownDocs, $ownRemarks){
     return ['status' => $status, 'feedback' => implode("\n", $feedback)];
 }
 
+/**
+ * A recommendation is filed against a single year ("2026") or a school year
+ * ("2026-2027"). Deadlines run to the end of it, so the later year is the one
+ * that decides whether the work is late. Returns 0 for anything unparseable.
+ */
+function recommendation_year_end($year){
+    if(!preg_match_all('/\d{4}/', (string) $year, $matches)){
+        return 0;
+    }
+    return (int) end($matches[0]);
+}
+
 function classify_recommendation_status($row){
     if($row['status'] === 'Completed'){
         return 'Completed';
     }
-    $year = trim($row['year'] ?? '');
-    if($year !== '' && ctype_digit($year) && (int) $year < (int) date('Y')){
+    $endYear = recommendation_year_end($row['year'] ?? '');
+    if($endYear > 0 && $endYear < (int) date('Y')){
         return 'Overdue';
     }
     return 'Ongoing';
 }
 
-function review_status_chip_info($status){
-    $map = [
+/**
+ * The label and colour every status is shown in. One table, so the office's
+ * chips, the admin grid's status boxes and the review modal all agree.
+ */
+function review_status_chip_map(){
+    return [
         'Pending' => ['label' => 'Pending', 'class' => 'chip-steel'],
         'Not Submitted' => ['label' => 'Not Submitted', 'class' => 'chip-red'],
         'Submitted' => ['label' => 'Awaiting Review', 'class' => 'chip-yellow'],
@@ -115,6 +131,10 @@ function review_status_chip_info($status){
         'Rejected' => ['label' => 'Rejected', 'class' => 'chip-red'],
         'Completed' => ['label' => 'Completed', 'class' => 'chip-green'],
     ];
+}
+
+function review_status_chip_info($status){
+    $map = review_status_chip_map();
     return $map[$status] ?? ['label' => $status, 'class' => 'chip-steel'];
 }
 

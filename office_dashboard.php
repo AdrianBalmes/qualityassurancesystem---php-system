@@ -6,6 +6,8 @@ require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/content_helper.php";
 require_once __DIR__ . "/audit_classification.php";
 require_once __DIR__ . "/office_directory.php";
+require_once __DIR__ . "/in_charge.php";
+require_once __DIR__ . "/asset_url.php";
 require_once __DIR__ . "/recommendation_rules.php";
 require_once __DIR__ . "/audit_log_helper.php";
 require_once __DIR__ . "/review_columns.php";
@@ -214,6 +216,28 @@ usort($allOfficeDocuments, function($a, $b){
     return strtotime($bLatest) <=> strtotime($aLatest);
 });
 
+// The tick list needs this office's staff and that of the offices it shares a
+// recommendation with -- not the whole staff directory, which is the
+// administrator's view rather than theirs.
+$inChargeOffices = [$office];
+foreach($recommendations as $inChargeRow){
+    foreach([$inChargeRow['office']] as $involved){
+        if($involved !== '' && !in_array($involved, $inChargeOffices, true)){
+            $inChargeOffices[] = $involved;
+        }
+    }
+    // Who else College Department put in charge is not this office's business.
+    if(college_department_is_private($inChargeRow['office']) && $inChargeRow['office'] !== $office){
+        continue;
+    }
+    foreach(in_charge_decode($inChargeRow['in_charge'] ?? '') as $involved){
+        if(!in_array($involved, $inChargeOffices, true)){
+            $inChargeOffices[] = $involved;
+        }
+    }
+}
+$inChargeOptions = in_charge_options($conn, $inChargeOffices);
+
 $officeNames = get_all_office_names($conn);
 $peerOffices = array_values(array_filter($officeNames, function($name) use ($officeAuditType){
     return audit_type_for_office($name) === $officeAuditType;
@@ -247,6 +271,7 @@ foreach($peerOffices as $peerOffice){
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link href="<?php echo asset_url('assets/in_charge.css'); ?>" rel="stylesheet">
 <style>
 body{margin:0;background:#f1f5fb;color:#344156;font-family:Arial,Helvetica,sans-serif}
 .topbar{background:linear-gradient(135deg,#316fc4,#2459a6);color:#fff;box-shadow:0 8px 20px rgba(44,93,165,.2)}
@@ -373,14 +398,15 @@ img,canvas,svg{max-width:100%}
 
 <section class="panel panel-pad" id="recommendations">
     <h2 class="panel-title"><i class="bi bi-clipboard-data"></i> <?php echo htmlspecialchars($officeAuditType, ENT_QUOTES); ?> Audit Recommendations</h2>
-    <div class="muted-copy" style="margin-bottom:12px">These recommendations are assigned and managed by the Internal Audit administrator. You can view them and submit your compliance response, action taken, and supporting documents &mdash; you cannot add, edit, or delete a recommendation.</div>
+    <div class="muted-copy" style="margin-bottom:12px">These recommendations are assigned and managed by the Internal Audit administrator. You can view them, name who in your office is in charge, and submit your compliance response, action taken, and supporting documents &mdash; you cannot add, edit, or delete a recommendation.</div>
     <div class="table-wrap">
         <table class="table dashboard-table">
             <thead>
                 <tr>
                     <th>Recommendation</th>
+                    <th style="width:190px">In Charge</th>
                     <th style="width:130px">Status</th>
-                    <th style="width:70px">Year</th>
+                    <th style="width:110px">Year</th>
                     <th style="width:200px">Compliance Response</th>
                     <th style="width:200px">Review Feedback</th>
                     <th style="width:150px">Supporting Documents</th>
@@ -396,6 +422,24 @@ img,canvas,svg{max-width:100%}
                         if($row['office'] !== $office){
                             $recText .= "<div class='muted-copy' style='margin-top:4px'><i class='bi bi-arrow-return-right'></i> Assigned to your office &mdash; owned by " . htmlspecialchars($row['office'], ENT_QUOTES) . "</div>";
                         }
+                        // The office a recommendation belongs to names anyone on it.
+                        // An office merely put in charge of someone else's names
+                        // its own people and nothing more, so it cannot take
+                        // itself off the list and lose sight of the work.
+                        $ownsRecommendation = $row['office'] === $office;
+                        $inChargeNames = in_charge_decode($row['in_charge'] ?? '');
+                        if(!$ownsRecommendation && college_department_is_private($row['office'])){
+                            // A private recommendation shows this office its own
+                            // involvement only -- never another office's.
+                            $ownStaffNames = in_charge_office_staff_names($conn, $office);
+                            $inChargeNames = array_values(array_filter($inChargeNames,
+                                function($name) use ($office, $ownStaffNames){
+                                    return $name === $office || in_array($name, $ownStaffNames, true);
+                                }));
+                        }
+                        $inChargeHtml = render_in_charge_cell($row['office'], $inChargeNames,
+                            $ownsRecommendation ? 'full' : 'staff', $office);
+
                         // Only this office's own remarks -- a recommendation passed to
                         // more than one office keeps each one's submission separate.
                         $ownRemarks = office_own_remarks($row, $office);
@@ -415,7 +459,7 @@ img,canvas,svg{max-width:100%}
                         $statusInfo = review_status_chip_info($shownStatus);
                         $label = $statusInfo['label'];
                         $chipClass = $statusInfo['class'];
-                        $year = $row['year'] !== '' ? htmlspecialchars($row['year'], ENT_QUOTES) : '&mdash;';
+                        $year = $row['year'] !== '' ? htmlspecialchars($row['year'], ENT_QUOTES) : '';
                         $reviewFeedbackDisplay = !empty($shownFeedback) ? nl2br(htmlspecialchars($shownFeedback, ENT_QUOTES)) : '<span class="muted-copy">No feedback yet</span>';
 
                         // Completed is final for the office (the server refuses it too).
@@ -440,8 +484,9 @@ img,canvas,svg{max-width:100%}
                         }
 
                         echo "
-                        <tr>
+                        <tr data-rec-id='{$recId}'>
                             <td class='rec-text-cell'>{$recText}</td>
+                            <td>{$inChargeHtml}</td>
                             <td><span class='status-chip {$chipClass}'>{$label}</span></td>
                             <td>{$year}</td>
                             <td class='rec-text-cell'>{$remarksDisplay}</td>
@@ -452,7 +497,7 @@ img,canvas,svg{max-width:100%}
                         ";
                     }
                 } else {
-                    echo "<tr><td colspan='7' class='empty-state'>No audit recommendations have been assigned to your office yet.</td></tr>";
+                    echo "<tr><td colspan='8' class='empty-state'>No audit recommendations have been assigned to your office yet.</td></tr>";
                 }
                 ?>
             </tbody>
@@ -515,7 +560,7 @@ img,canvas,svg{max-width:100%}
                             if(!empty($allOfficeDocuments)){
                                 foreach($allOfficeDocuments as $group){
                                     $docRecText = htmlspecialchars($group['recommendation'], ENT_QUOTES);
-                                    $docYear = $group['year'] !== '' ? htmlspecialchars($group['year'], ENT_QUOTES) : '&mdash;';
+                                    $docYear = $group['year'] !== '' ? htmlspecialchars($group['year'], ENT_QUOTES) : '';
                                     $docStatusLabel = classify_recommendation_status(['status' => $group['status'], 'year' => $group['year']]);
                                     $docChipClass = recommendation_status_chip_class($docStatusLabel);
                                     $latestUpload = $group['docs'][0]['uploaded_at'] ?? '';
@@ -559,7 +604,41 @@ img,canvas,svg{max-width:100%}
     <div class="doc-sidebar-body" id="docSidebarBody"></div>
 </aside>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="<?php echo asset_url('assets/in_charge.js'); ?>"></script>
 <script>
+InCharge.configure(<?php echo json_encode($inChargeOptions); ?>);
+InCharge.init(document);
+
+// There is no edit mode on this page, so a change saves on the spot. The cell
+// says how it went rather than throwing an alert over the dashboard.
+InCharge.onChange(function(cell, names){
+    var row = cell.closest('tr');
+    var note = cell.querySelector('.incharge-saving');
+    if(!note){
+        note = document.createElement('span');
+        note.className = 'incharge-saving';
+        cell.appendChild(note);
+    }
+    note.className = 'incharge-saving';
+    note.textContent = 'Saving\u2026';
+
+    fetch('recommendations_api.php', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'action=save_in_charge'
+            + '&id=' + encodeURIComponent(row.getAttribute('data-rec-id') || '')
+            + '&office=' + encodeURIComponent(<?php echo json_encode($office); ?>)
+            + '&in_charge=' + encodeURIComponent(JSON.stringify(names))
+    }).then(function(res){ return res.json(); }).then(function(data){
+        if(!data.ok){ throw new Error(data.error || 'Could not save'); }
+        note.textContent = 'Saved';
+        setTimeout(function(){ if(note.textContent === 'Saved'){ note.textContent = ''; } }, 2000);
+    }).catch(function(err){
+        note.className = 'incharge-saving is-error';
+        note.textContent = err.message || 'Not saved \u2014 try again';
+    });
+});
+
 new Chart(document.getElementById('ownStatusChart'), {
     type: 'doughnut',
     data: {

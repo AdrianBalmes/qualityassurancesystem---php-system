@@ -174,10 +174,6 @@ $recStats = compute_recommendation_stats($recommendations);
 
 $recIds = array_map(function($row){ return (int) $row['id']; }, $recommendations);
 $docsByRecommendation = [];
-$recOfficeById = [];
-foreach($recommendations as $recRow){
-    $recOfficeById[(int) $recRow['id']] = $recRow['office'];
-}
 if(!empty($recIds)){
     $placeholders = implode(',', array_fill(0, count($recIds), '?'));
     $docTypes = str_repeat('i', count($recIds));
@@ -186,10 +182,13 @@ if(!empty($recIds)){
     $docStmt->execute();
     $docResult = $docStmt->get_result();
     while($docRow = $docResult->fetch_assoc()){
-        // College Department compliance goes to the admin only: an office
-        // sees the documents it submitted itself, never another office's.
+        // An office sees the documents it submitted itself, the same way it
+        // sees only its own remarks. Several offices can be in charge of one
+        // recommendation, and each other's evidence is between them and the
+        // administrator -- serve_upload.php refuses it either way, so listing
+        // it here only produced names that could not be opened.
         $docRecId = (int) $docRow['recommendation_id'];
-        if(college_department_is_private($recOfficeById[$docRecId] ?? '') && $docRow['office'] !== $office){
+        if($docRow['office'] !== $office){
             continue;
         }
         $docsByRecommendation[$docRecId][] = $docRow;
@@ -265,6 +264,7 @@ foreach($peerOffices as $peerOffice){
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<link rel="icon" type="image/png" href="assets/sbc-logo.png">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title><?php echo htmlspecialchars($office, ENT_QUOTES); ?> Dashboard</title>

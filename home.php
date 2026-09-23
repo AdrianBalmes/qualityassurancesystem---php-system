@@ -120,6 +120,7 @@ $showBackButton = $selectedArea !== '' || $selectedProgram !== '';
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<link rel="icon" type="image/png" href="assets/sbc-logo.png">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SBC QA Dashboard</title>
@@ -180,7 +181,7 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
 <header class="topbar"><div class="nav-wrap"><div class="brand"><span class="brand-icon"><img src="assets/sbc-logo.png" alt="St. Bridget College" style="width:100%;height:100%;object-fit:contain"></span><?php sc_span($siteContent, 'home.brand', 'SBC Quality Assurance Electronic Documentation Dashboard'); ?></div><nav class="nav-links"><a href="home.php">Home</a><a href="repository.php">Repository</a><a href="activity_log.php">Activity Log</a><a href="manage_users.php">Users</a><a href="manage_offices.php">Offices</a><?php render_profile_dropdown('admin_profile.php', 'Admin Profile'); ?></nav></div></header>
 <main class="dashboard">
 <section class="panel panel-pad" id="office-rec-chart" style="margin-bottom:18px">
-    <h3 style="margin:0 0 8px;font-size:15px;font-weight:800;color:#344156"><?php sc_span($siteContent, 'home.audit.chart_title', 'Recommendations Submitted by Office'); ?></h3>
+    <h3 style="margin:0 0 8px;font-size:15px;font-weight:800;color:#344156"><?php sc_span($siteContent, 'home.audit.chart_title', 'Recommendations Submitted by Offices'); ?></h3>
     <div class="chart-box"><canvas id="officeRecChart"></canvas></div>
 </section>
 <h2 class="section-heading"><?php sc_span($siteContent, 'home.office.section_title', 'Manage Recommendations by Office'); ?></h2>

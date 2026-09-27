@@ -6,6 +6,7 @@ require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/content_helper.php";
 require_once __DIR__ . "/audit_classification.php";
 require_once __DIR__ . "/office_directory.php";
+require_once __DIR__ . "/notifications.php";
 require_once __DIR__ . "/asset_url.php";
 require_once __DIR__ . "/recommendation_rules.php";
 require_once __DIR__ . "/audit_log_helper.php";
@@ -73,6 +74,16 @@ if($_SERVER['REQUEST_METHOD'] === 'POST' && empty($_POST) && empty($_FILES) && (
     office_dashboard_redirect($office, $officeDashboardUrl . "#recommendations", "Nothing was saved: the attached file is larger than the {$uploadLimitLabel} upload limit. Please attach a smaller file and submit again.");
 }
 
+if(isset($_POST['mark_notifications_read'])){
+    mark_notifications_read($conn, $office);
+    office_dashboard_redirect($office, $officeDashboardUrl . "#activity-board", '');
+}
+
+if(isset($_POST['clear_notifications'])){
+    clear_notifications($conn, $office);
+    office_dashboard_redirect($office, $officeDashboardUrl, '');
+}
+
 if(isset($_POST['submit_compliance'])){
     $recId = intval($_POST['recommendation_id'] ?? 0);
     $complianceResponse = trim($_POST['compliance_response'] ?? '');
@@ -101,6 +112,14 @@ if(isset($_POST['submit_compliance'])){
     $updateStmt->execute();
 
     log_audit_event($conn, $_SESSION['office_username'], 'office', $office, 'compliance_submitted', 'recommendation', $recId, "{$office} submitted a compliance response for recommendation #{$recId}");
+
+    // Everyone else involved sees the status move to Submitted, so they are
+    // told; the office that just submitted it is not.
+    if($ownedRec['status'] !== 'Submitted'){
+        notify_offices($conn, notification_recipients($conn, $ownedRec), NOTIFY_STATUS, $recId,
+            'Status changed to Submitted',
+            "{$office} submitted a compliance response.", $office);
+    }
 
     if(!empty($_FILES['compliance_file']['name'])){
         $uploadError = (int) $_FILES['compliance_file']['error'];
@@ -214,28 +233,8 @@ usort($allOfficeDocuments, function($a, $b){
     return strtotime($bLatest) <=> strtotime($aLatest);
 });
 
-$officeNames = get_all_office_names($conn);
-$peerOffices = array_values(array_filter($officeNames, function($name) use ($officeAuditType){
-    return audit_type_for_office($name) === $officeAuditType;
-}));
-
-$allRowsForAuditType = [];
-$peerStmt = $conn->prepare("SELECT * FROM audit_recommendations WHERE audit_type = ?");
-$peerStmt->bind_param("s", $officeAuditType);
-$peerStmt->execute();
-$peerResult = $peerStmt->get_result();
-while($peerRow = $peerResult->fetch_assoc()){
-    $allRowsForAuditType[$peerRow['office']][] = $peerRow;
-}
-
-$peerLabels = [];
-$peerCompliance = [];
-foreach($peerOffices as $peerOffice){
-    $peerRows = $allRowsForAuditType[$peerOffice] ?? [];
-    $peerStats = compute_recommendation_stats($peerRows);
-    $peerLabels[] = $peerOffice;
-    $peerCompliance[] = $peerStats['compliance_pct'];
-}
+$notifications = fetch_office_notifications($conn, $office, 12);
+$unreadNotifications = count_unread_notifications($conn, $office);
 ?>
 
 <!DOCTYPE html>
@@ -318,6 +317,54 @@ body{margin:0;background:#f1f5fb;color:#344156;font-family:Arial,Helvetica,sans-
 .compliance-btn{border:0;background:#eef4ff;color:#2e67b8;border-radius:6px;padding:6px 10px;font-weight:800;font-size:12.5px;white-space:nowrap}
 form{max-width:100%}input,select,textarea{max-width:100%}
 img,canvas,svg{max-width:100%}
+.inbox-toggle{position:relative}
+.inbox-badge{position:absolute;top:-7px;right:-12px;min-width:17px;height:17px;padding:0 5px;border-radius:999px;background:#e0533f;color:#fff;font-size:10.5px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;line-height:1}
+.inbox-menu{width:min(360px,92vw);padding:0;border:1px solid #dbe3ef;border-radius:9px;box-shadow:0 14px 34px rgba(44,74,119,.22);overflow:hidden}
+.inbox-head{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border-bottom:1px solid #e6edf7;background:#f8fbff;font-size:13px;font-weight:800;color:#26354b}
+.inbox-state{font-size:11.5px;font-weight:700;color:#66758d}
+.inbox-list{max-height:320px;overflow-y:auto;overscroll-behavior:contain}
+.nav-links .inbox-item{display:flex;gap:10px;padding:10px 14px;border-bottom:1px solid #f0f4fa;text-decoration:none;color:#26354b}
+.nav-links .inbox-item:hover{background:#f7fbff}
+.inbox-item.is-unread{background:#f3f8ff}
+.inbox-icon{width:28px;height:28px;flex-shrink:0;border-radius:7px;display:grid;place-items:center;font-size:13px}
+.inbox-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+.inbox-title{font-size:12.8px;font-weight:800;color:#26354b}
+.inbox-item.is-unread .inbox-title::after{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:#e0533f;margin-left:6px;vertical-align:middle}
+.inbox-body{font-size:12px;color:#56637a;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+.inbox-when{font-size:10.5px;font-weight:700;color:#8492a8}
+.inbox-empty{padding:24px 14px;text-align:center;color:#8492a8;font-size:12.5px;display:grid;gap:6px;justify-items:center}
+.inbox-empty i{font-size:22px}
+.inbox-foot{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:9px 12px;border-top:1px solid #e6edf7;background:#f8fbff}
+/* .nav-links a,.nav-links button paints the top bar near-white and strips
+   padding and borders. That beats a single class, so every rule below is
+   written two classes deep or the footer turns invisible on its own panel. */
+.nav-links .inbox-action{border:1px solid #c8d4e7;border-radius:5px;background:#fff;color:#2e67b8;font-weight:800;font-size:11.5px;padding:6px 9px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;text-decoration:none}
+.nav-links .inbox-action:hover{background:#eef4ff;border-color:#316fc4;color:#2e67b8;text-decoration:none}
+.nav-links .inbox-action:disabled{opacity:.45;cursor:not-allowed}
+.nav-links .inbox-action-danger{color:#a33831}
+.nav-links .inbox-action-danger:hover{background:#ffe1dc;border-color:#e0a49c;color:#a33831}
+.nav-links .inbox-action-link{margin-left:auto;border-color:transparent;background:transparent}
+.board-title{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.board-unread{display:inline-flex;align-items:center;background:#e0533f;color:#fff;font-size:11px;font-weight:800;padding:2px 8px;border-radius:999px;margin-left:6px;vertical-align:middle}
+.board-mark-read{border:1px solid #c8d4e7;border-radius:5px;background:#fff;color:#2e67b8;font-weight:800;font-size:12px;padding:5px 10px;cursor:pointer}
+.board-mark-read:hover{background:#eef4ff;border-color:#316fc4}
+.board-feed{height:210px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding-right:4px}
+.board-item{display:flex;gap:10px;padding:9px 10px;border:1px solid #e6edf7;border-radius:7px;background:#fff;text-decoration:none;color:inherit}
+.board-item:hover{background:#f7fbff;border-color:#c8d4e7}
+.board-item.is-unread{background:#f3f8ff;border-color:#c8d4e7}
+.board-icon{width:30px;height:30px;flex-shrink:0;border-radius:7px;display:grid;place-items:center;font-size:14px}
+.note-blue{background:#d8e2f5;color:#2e5fa3}
+.note-orange{background:#ffe3c2;color:#95530a}
+.note-purple{background:#efe9fb;color:#5b3fa0}
+.note-green{background:#cdeedc;color:#277548}
+.note-steel{background:#e4e9f1;color:#4c5a72}
+.board-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+.board-head{font-size:13px;font-weight:800;color:#26354b}
+.board-item.is-unread .board-head::after{content:'';display:inline-block;width:7px;height:7px;border-radius:50%;background:#e0533f;margin-left:7px;vertical-align:middle}
+.board-body{font-size:12.5px;color:#56637a;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+.board-when{font-size:11px;font-weight:700;color:#8492a8}
+.board-empty{height:100%;display:grid;place-items:center;text-align:center;color:#8492a8;font-size:13px;gap:8px;padding:12px}
+.board-empty i{font-size:26px}
 @media(max-width:1100px){.charts-grid{grid-template-columns:1fr}}
 @media(max-width:900px){.nav-wrap{flex-direction:column;align-items:flex-start;padding:14px 18px}.page-head{align-items:flex-start;flex-direction:column}}
 @media(max-width:620px){.brand{font-size:18px}}
@@ -333,6 +380,48 @@ img,canvas,svg{max-width:100%}
             <a href="<?php echo htmlspecialchars($officeDashboardUrl, ENT_QUOTES); ?>">Dashboard</a>
             <a href="repository.php">Repository</a>
             <button type="button" data-bs-toggle="modal" data-bs-target="#allDocumentsModal"><i class="bi bi-folder2-open"></i> My Documents</button>
+            <div class="dropdown">
+                <?php /* auto-close outside: the list scrolls, and a click inside must not shut it. */ ?>
+                <button type="button" class="nav-dropdown-toggle inbox-toggle" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" aria-label="Inbox">
+                    <i class="bi bi-bell-fill"></i> Inbox
+                    <?php if($unreadNotifications > 0): ?><span class="inbox-badge"><?php echo $unreadNotifications > 99 ? '99+' : $unreadNotifications; ?></span><?php endif; ?>
+                </button>
+                <div class="dropdown-menu dropdown-menu-end inbox-menu">
+                    <div class="inbox-head">
+                        <span>Inbox</span>
+                        <span class="inbox-state"><?php echo $unreadNotifications > 0 ? $unreadNotifications . ' unread' : 'All caught up'; ?></span>
+                    </div>
+                    <div class="inbox-list">
+                        <?php if(empty($notifications)): ?>
+                        <div class="inbox-empty"><i class="bi bi-inbox"></i> No notifications yet</div>
+                        <?php else: foreach(array_slice($notifications, 0, 6) as $inboxNote):
+                            $inboxStyle = notification_style($inboxNote['type']);
+                        ?>
+                        <a class="inbox-item<?php echo $inboxNote['read_at'] === null ? ' is-unread' : ''; ?>" href="<?php echo htmlspecialchars($officeDashboardUrl, ENT_QUOTES); ?>#recommendations">
+                            <span class="inbox-icon <?php echo $inboxStyle['class']; ?>"><i class="bi <?php echo $inboxStyle['icon']; ?>"></i></span>
+                            <span class="inbox-text">
+                                <span class="inbox-title"><?php echo htmlspecialchars($inboxNote['title'], ENT_QUOTES); ?></span>
+                                <?php if(trim((string) $inboxNote['body']) !== ''): ?>
+                                <span class="inbox-body"><?php echo htmlspecialchars($inboxNote['body'], ENT_QUOTES); ?></span>
+                                <?php endif; ?>
+                                <span class="inbox-when"><?php echo htmlspecialchars(notification_time_ago($inboxNote['created_at']), ENT_QUOTES); ?></span>
+                            </span>
+                        </a>
+                        <?php endforeach; endif; ?>
+                    </div>
+                    <div class="inbox-foot">
+                        <?php if(!empty($notifications)): ?>
+                        <form method="POST" action="<?php echo htmlspecialchars($officeDashboardUrl, ENT_QUOTES); ?>#activity-board" style="margin:0">
+                            <button type="submit" name="mark_notifications_read" value="1" class="inbox-action"<?php echo $unreadNotifications === 0 ? ' disabled' : ''; ?>><i class="bi bi-check2-all"></i> Mark all as read</button>
+                        </form>
+                        <form method="POST" action="<?php echo htmlspecialchars($officeDashboardUrl, ENT_QUOTES); ?>" style="margin:0" onsubmit="return confirm('Clear every notification in this inbox? This cannot be undone.');">
+                            <button type="submit" name="clear_notifications" value="1" class="inbox-action inbox-action-danger"><i class="bi bi-trash3"></i> Clear all</button>
+                        </form>
+                        <?php endif; ?>
+                        <a class="inbox-action inbox-action-link" href="<?php echo htmlspecialchars($officeDashboardUrl, ENT_QUOTES); ?>#activity-board">Activity Board</a>
+                    </div>
+                </div>
+            </div>
             <div class="dropdown">
                 <button type="button" class="nav-dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-person-circle"></i> Profile <i class="bi bi-chevron-down" style="font-size:11px"></i></button>
                 <ul class="dropdown-menu dropdown-menu-end">
@@ -366,9 +455,39 @@ img,canvas,svg{max-width:100%}
         <h2 class="panel-title"><i class="bi bi-pie-chart-fill"></i> Your Recommendation Status</h2>
         <div class="chart-box"><canvas id="ownStatusChart"></canvas></div>
     </div>
-    <div class="panel panel-pad">
-        <h2 class="panel-title"><i class="bi bi-bar-chart-fill"></i> Compliance Progress Across Offices <span class="muted-copy" style="font-weight:700">(view only)</span></h2>
-        <div class="chart-box"><canvas id="peerComplianceChart"></canvas></div>
+    <div class="panel panel-pad" id="activity-board">
+        <h2 class="panel-title board-title">
+            <span><i class="bi bi-broadcast"></i> Activity Board
+                <?php if($unreadNotifications > 0): ?><span class="board-unread"><?php echo $unreadNotifications; ?> new</span><?php endif; ?>
+            </span>
+            <?php if($unreadNotifications > 0): ?>
+            <form method="POST" action="<?php echo htmlspecialchars($officeDashboardUrl, ENT_QUOTES); ?>#activity-board" style="margin:0">
+                <button type="submit" name="mark_notifications_read" value="1" class="board-mark-read">Mark all as read</button>
+            </form>
+            <?php endif; ?>
+        </h2>
+        <div class="board-feed">
+            <?php if(empty($notifications)): ?>
+            <div class="board-empty">
+                <i class="bi bi-inbox"></i>
+                <div>Nothing yet. New recommendations for your office, and any change to their status, will appear here.</div>
+            </div>
+            <?php else: foreach($notifications as $note):
+                $noteStyle = notification_style($note['type']);
+                $noteUnread = $note['read_at'] === null ? ' is-unread' : '';
+            ?>
+            <a class="board-item<?php echo $noteUnread; ?>" href="#recommendations">
+                <span class="board-icon <?php echo $noteStyle['class']; ?>"><i class="bi <?php echo $noteStyle['icon']; ?>"></i></span>
+                <span class="board-text">
+                    <span class="board-head"><?php echo htmlspecialchars($note['title'], ENT_QUOTES); ?></span>
+                    <?php if(trim((string) $note['body']) !== ''): ?>
+                    <span class="board-body"><?php echo htmlspecialchars($note['body'], ENT_QUOTES); ?></span>
+                    <?php endif; ?>
+                    <span class="board-when"><?php echo htmlspecialchars(notification_time_ago($note['created_at']), ENT_QUOTES); ?></span>
+                </span>
+            </a>
+            <?php endforeach; endif; ?>
+        </div>
     </div>
 </section>
 
@@ -573,23 +692,6 @@ new Chart(document.getElementById('ownStatusChart'), {
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
 });
 
-new Chart(document.getElementById('peerComplianceChart'), {
-    type: 'bar',
-    data: {
-        labels: <?php echo json_encode($peerLabels); ?>,
-        datasets: [{
-            label: 'Compliance %',
-            data: <?php echo json_encode($peerCompliance); ?>,
-            backgroundColor: '#316fc4'
-        }]
-    },
-    options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: { y: { beginAtZero: true, max: 100, ticks: { callback: function(v){ return v + '%'; } } } }
-    }
-});
 
 (function(){
     var sidebar = document.getElementById('docSidebar');

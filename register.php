@@ -5,6 +5,7 @@ require_once __DIR__ . "/page_background.php";
 require_once __DIR__ . "/profile_columns.php";
 require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/office_directory.php";
+require_once __DIR__ . "/permissions.php";
 require_once __DIR__ . "/audit_log_helper.php";
 
 ensure_profile_columns($conn);
@@ -63,10 +64,12 @@ if(isset($_POST['register'])){
             // Role comes from the vetted account_type, never straight from the
             // request, and every account still needs an admin to approve it.
             $role = $wantsAdmin ? 'admin' : 'user';
+            // Never QA Head from a self-registration, however it is approved.
+            $roleSlug = $wantsAdmin ? ROLE_QA_OFFICER : ROLE_OFFICE;
             $pending = USER_STATUS_PENDING;
 
-            $insert = $conn->prepare("INSERT INTO users (username, password, email, phone, role, office, full_name, status) VALUES (?,?,?,?,?,?,?,?)");
-            $insert->bind_param("ssssssss", $form['username'], $hashed, $form['email'], $form['phone'], $role, $form['office'], $form['full_name'], $pending);
+            $insert = $conn->prepare("INSERT INTO users (username, password, email, phone, role, office, full_name, status, role_slug) VALUES (?,?,?,?,?,?,?,?,?)");
+            $insert->bind_param("sssssssss", $form['username'], $hashed, $form['email'], $form['phone'], $role, $form['office'], $form['full_name'], $pending, $roleSlug);
             try {
                 $insert->execute();
             } catch(mysqli_sql_exception $e){
@@ -83,7 +86,7 @@ if(isset($_POST['register'])){
             } else {
                 $newUserId = $conn->insert_id;
 
-                $whatKind = $wantsAdmin ? 'an administrator' : "a {$form['office']}";
+                $whatKind = $wantsAdmin ? 'a QA Officer' : "a {$form['office']}";
                 log_audit_event($conn, $form['username'], $wantsAdmin ? 'admin' : 'office', $form['office'], 'registration_submitted', 'user', $newUserId,
                     "{$form['full_name']} requested {$whatKind} account (username \"{$form['username']}\")");
 
@@ -146,7 +149,7 @@ body{background:linear-gradient(135deg,#f6f8fb 0%,#e9effd 100%);font-family:'Int
                     <label class="form-label">Account Type</label>
                     <select name="account_type" id="accountType" class="form-select">
                         <option value="user"<?php echo $form['account_type'] !== 'admin' ? ' selected' : ''; ?>>Department User</option>
-                        <option value="admin"<?php echo $form['account_type'] === 'admin' ? ' selected' : ''; ?>>Administrator</option>
+                        <option value="admin"<?php echo $form['account_type'] === 'admin' ? ' selected' : ''; ?>>QA Officer</option>
                     </select>
                     <div class="hint mt-1" id="accountTypeHint"></div>
                 </div>

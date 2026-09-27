@@ -5,6 +5,7 @@ require_once __DIR__ . "/page_background.php";
 require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/nav_dropdown.php";
 require_once __DIR__ . "/upload_access.php";
+require_once __DIR__ . "/permissions.php";
 
 /**
  * The files inside one department's folder in the repository.
@@ -22,7 +23,7 @@ if(!isset($_SESSION['admin_username']) && !isset($_SESSION['office_username'])){
 ensure_user_account_columns($conn);
 enforce_active_account($conn);
 
-$isAdmin = isset($_SESSION['admin_role']) && $_SESSION['admin_role'] === 'admin';
+$isAdmin = session_is_qa_staff();
 $office = trim($_GET['office'] ?? '');
 
 if($office === ''){

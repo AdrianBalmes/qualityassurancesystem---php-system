@@ -3,6 +3,7 @@ require_once __DIR__ . "/session_bootstrap.php";
 require_once __DIR__ . "/database.php";
 require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/upload_access.php";
+require_once __DIR__ . "/permissions.php";
 
 if(isset($_SESSION['office_logins']) && is_array($_SESSION['office_logins'])){
     $requestedOffice = isset($_GET['office']) ? trim($_GET['office']) : '';
@@ -38,7 +39,7 @@ if(!$doc){
     exit("Document not found.");
 }
 
-$isAdmin = isset($_SESSION['admin_username']) && $_SESSION['admin_role'] === 'admin';
+$isAdmin = session_is_qa_staff();
 if(!upload_viewer_can_see_office($doc['office'])){
     http_response_code(403);
     exit("You are not allowed to view this document.");

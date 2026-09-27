@@ -5,12 +5,10 @@ require_once __DIR__ . "/page_background.php";
 require_once __DIR__ . "/content_helper.php";
 require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/audit_log_helper.php";
+require_once __DIR__ . "/permissions.php";
 require_once __DIR__ . "/nav_dropdown.php";
 
-if(!isset($_SESSION['admin_username']) || $_SESSION['admin_role'] !== 'admin'){
-    header("Location: admin_login.php");
-    exit();
-}
+require_permission($conn, 'users.manage');
 
 ensure_user_account_columns($conn);
 enforce_active_account($conn, 'admin');
@@ -18,6 +16,46 @@ $siteContent = sc_load($conn);
 $adminUsername = $_SESSION['admin_username'];
 $notice = "";
 $noticeType = "success";
+
+if(isset($_POST['set_user_role'])){
+    $userId = intval($_POST['user_id'] ?? 0);
+    $newSlug = trim($_POST['role_slug'] ?? '');
+
+    $lookup = $conn->prepare("SELECT username, full_name, office, role, role_slug, status FROM users WHERE id = ? LIMIT 1");
+    $lookup->bind_param("i", $userId);
+    $lookup->execute();
+    $target = $lookup->get_result()->fetch_assoc();
+
+    if(!$target){
+        $notice = "That account no longer exists.";
+        $noticeType = "danger";
+    } elseif($target['role'] !== 'admin'){
+        // Office accounts take their role from the office they belong to.
+        $notice = "Only QA accounts have a role to set.";
+        $noticeType = "danger";
+    } elseif(!in_array($newSlug, [ROLE_QA_HEAD, ROLE_QA_OFFICER], true)){
+        $notice = "Unknown role.";
+        $noticeType = "danger";
+    } elseif($newSlug === ROLE_QA_HEAD && !current_user_can($conn, 'users.assign_head')){
+        // Otherwise an officer who can manage accounts simply promotes itself.
+        $notice = "Only a QA Head can grant the QA Head role.";
+        $noticeType = "danger";
+    } elseif($newSlug !== ROLE_QA_HEAD && is_last_qa_head($conn, $target)){
+        $notice = "This is the last QA Head. Promote another one before changing this account.";
+        $noticeType = "danger";
+    } else {
+        $update = $conn->prepare("UPDATE users SET role_slug = ? WHERE id = ?");
+        $update->bind_param("si", $newSlug, $userId);
+        $update->execute();
+
+        $roleName = role_display_name($conn, $newSlug);
+        log_audit_event($conn, $adminUsername, 'admin', 'Admin', 'user_role_changed', 'user', $userId,
+            "Set \"{$target['username']}\" to {$roleName}");
+
+        $notice = "{$target['username']} is now {$roleName}.";
+        $noticeType = "success";
+    }
+}
 
 if(isset($_POST['review_user'])){
     $userId = intval($_POST['user_id'] ?? 0);
@@ -28,7 +66,7 @@ if(isset($_POST['review_user'])){
         $notice = "Unknown decision.";
         $noticeType = "danger";
     } else {
-        $lookup = $conn->prepare("SELECT username, full_name, office, role, status FROM users WHERE id = ? LIMIT 1");
+        $lookup = $conn->prepare("SELECT username, full_name, office, role, role_slug, status FROM users WHERE id = ? LIMIT 1");
         $lookup->bind_param("i", $userId);
         $lookup->execute();
         $target = $lookup->get_result()->fetch_assoc();
@@ -48,6 +86,12 @@ if(isset($_POST['review_user'])){
         } elseif($losingAnAdmin && approved_admin_count($conn) <= 1){
             // Never leave the system with nobody able to approve anyone.
             $notice = "This is the last approved administrator. Approve another one before revoking this account.";
+            $noticeType = "danger";
+        } elseif($decision === USER_STATUS_REJECTED && is_last_qa_head($conn, $target)){
+            // approved_admin_count() counts every QA account, officers
+            // included, so it happily allows revoking the only QA Head while
+            // officers remain -- and nobody could manage offices or roles again.
+            $notice = "This is the last QA Head. Promote another one before revoking this account.";
             $noticeType = "danger";
         } else {
             $update = $conn->prepare("UPDATE users SET status = ?, reviewed_by = ?, reviewed_at = NOW(), review_reason = ? WHERE id = ?");
@@ -90,6 +134,7 @@ if($filter === 'all'){
 }
 $userRows = $listResult ? $listResult->fetch_all(MYSQLI_ASSOC) : [];
 $approvedAdmins = approved_admin_count($conn);
+$canAssignHead = current_user_can($conn, 'users.assign_head');
 
 function mu_chip($status){
     if($status === USER_STATUS_PENDING){ return 'chip-yellow'; }
@@ -137,6 +182,11 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
 .chip-purple{background:#efe9fb;color:#5b3fa0}
 .chip-steel{background:#e4e9f1;color:#4c5a72}
 .row-actions{display:flex;gap:6px;flex-wrap:wrap}
+.role-form{display:flex;align-items:center;gap:5px;margin:0}
+.role-select{min-height:32px;border:1px solid #cfd9e8;border-radius:5px;padding:4px 7px;font-size:12.5px;font-weight:700;font-family:inherit;max-width:130px}
+.role-select:disabled{background:#f1f3f7;color:#8794a8}
+.role-save{border:0;border-radius:5px;background:#316fc4;color:#fff;width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
+.role-save:hover{background:#2459a6}
 .btn-approve,.btn-reject,.btn-revoke{border:0;border-radius:5px;font-weight:800;font-size:12px;padding:7px 12px;display:inline-flex;align-items:center;gap:5px;cursor:pointer}
 .btn-approve{background:#2fa66a;color:#fff}
 .btn-approve:hover{background:#268a58}
@@ -149,7 +199,7 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
 </head>
 <body>
 <?php render_page_background(); ?>
-<header class="topbar"><div class="nav-wrap"><div class="brand"><span class="brand-icon"><img src="assets/sbc-logo.png" alt="St. Bridget College" style="width:100%;height:100%;object-fit:contain"></span><span>User Accounts</span></div><nav class="nav-links"><a href="home.php">Home</a><a href="repository.php">Repository</a><a href="activity_log.php">Activity Log</a><a href="manage_users.php">Users</a><a href="manage_offices.php">Offices</a><?php render_profile_dropdown('admin_profile.php', 'Admin Profile'); ?></nav></div></header>
+<header class="topbar"><div class="nav-wrap"><div class="brand"><span class="brand-icon"><img src="assets/sbc-logo.png" alt="St. Bridget College" style="width:100%;height:100%;object-fit:contain"></span><span>User Accounts</span></div><nav class="nav-links"><a href="home.php">Home</a><a href="repository.php">Repository</a><?php if(current_user_can($conn, 'activity_log.view')): ?><a href="activity_log.php">Activity Log</a><?php endif; ?><?php if(current_user_can($conn, 'users.manage')): ?><a href="manage_users.php">Users</a><?php endif; ?><?php if(current_user_can($conn, 'offices.manage')): ?><a href="manage_offices.php">Offices</a><?php endif; ?><?php if(current_user_can($conn, 'roles.manage')): ?><a href="manage_roles.php">Roles</a><?php endif; ?><?php render_profile_dropdown('admin_profile.php', 'Admin Profile'); ?></nav></div></header>
 
 <main class="page">
     <h1 class="page-title">User Accounts</h1>
@@ -198,6 +248,11 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
                     $isAdminRow = $row['role'] === 'admin';
                     $isSelf = $row['username'] === $adminUsername;
                     $isLastAdmin = $isAdminRow && $status === USER_STATUS_APPROVED && $approvedAdmins <= 1;
+                    $rowSlug = trim((string) ($row['role_slug'] ?? '')) ?: ($isAdminRow ? ROLE_QA_HEAD : ROLE_OFFICE);
+                    $isLastHead = is_last_qa_head($conn, $row);
+                    // A QA Head is only editable by someone who may grant that
+                    // role, and the last one is not editable at all.
+                    $roleLocked = $isLastHead || ($rowSlug === ROLE_QA_HEAD && !$canAssignHead);
                 ?>
                     <tr>
                         <td>
@@ -205,9 +260,26 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
                             <div class="user-sub">@<?php echo htmlspecialchars($row['username'], ENT_QUOTES); ?><?php echo $isSelf ? ' · you' : ''; ?></div>
                         </td>
                         <td>
-                            <span class="chip <?php echo $isAdminRow ? 'chip-purple' : 'chip-steel'; ?>">
-                                <?php echo $isAdminRow ? 'Administrator' : 'Department'; ?>
-                            </span>
+                            <?php if(!$isAdminRow): ?>
+                            <span class="chip chip-steel">Department</span>
+                            <?php else: ?>
+                            <form method="POST" class="role-form">
+                                <input type="hidden" name="user_id" value="<?php echo (int) $row['id']; ?>">
+                                <select name="role_slug" class="role-select"<?php echo $roleLocked ? ' disabled' : ''; ?>>
+                                    <?php foreach([ROLE_QA_HEAD => 'QA Head', ROLE_QA_OFFICER => 'QA Officer'] as $slug => $label):
+                                        if($slug === ROLE_QA_HEAD && !$canAssignHead && $rowSlug !== ROLE_QA_HEAD){ continue; }
+                                    ?>
+                                    <option value="<?php echo $slug; ?>"<?php echo $rowSlug === $slug ? ' selected' : ''; ?>><?php echo $label; ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <?php if(!$roleLocked): ?>
+                                <button type="submit" name="set_user_role" value="1" class="role-save" title="Save role"><i class="bi bi-check2"></i></button>
+                                <?php endif; ?>
+                            </form>
+                            <?php if($roleLocked): ?>
+                            <div class="user-sub"><?php echo $isLastHead ? 'Last QA Head' : 'QA Head only'; ?></div>
+                            <?php endif; ?>
+                            <?php endif; ?>
                         </td>
                         <td><?php echo htmlspecialchars($row['office'] !== '' && !$isAdminRow ? $row['office'] : ($isAdminRow ? 'All departments' : '—'), ENT_QUOTES); ?></td>
                         <td>

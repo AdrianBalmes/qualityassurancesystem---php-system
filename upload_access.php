@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . "/permissions.php";
+
 /**
  * Serving uploaded documents.
  *
@@ -27,7 +29,7 @@ const UPLOAD_MIME_TYPES = [
  * offices at once (office_logins) sees the files of each of them.
  */
 function upload_viewer_can_see_office($office){
-    if(isset($_SESSION['admin_username'], $_SESSION['admin_role']) && $_SESSION['admin_role'] === 'admin'){
+    if(session_is_qa_staff()){
         return true;
     }
 

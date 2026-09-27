@@ -6,12 +6,10 @@ require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/content_helper.php";
 require_once __DIR__ . "/office_directory.php";
 require_once __DIR__ . "/audit_log_helper.php";
+require_once __DIR__ . "/permissions.php";
 require_once __DIR__ . "/nav_dropdown.php";
 
-if(!isset($_SESSION['admin_username']) || $_SESSION['admin_role'] !== 'admin'){
-    header("Location: admin_login.php");
-    exit();
-}
+require_permission($conn, 'activity_log.view');
 
 ensure_user_account_columns($conn);
 enforce_active_account($conn, 'admin');
@@ -207,7 +205,7 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
 </head>
 <body>
 <?php render_page_background(); ?>
-<header class="topbar"><div class="nav-wrap"><div class="brand"><span class="brand-icon"><img src="assets/sbc-logo.png" alt="St. Bridget College" style="width:100%;height:100%;object-fit:contain"></span><?php sc_span($siteContent, 'home.brand', 'SBC Quality Assurance Electronic Documentation Dashboard'); ?></div><nav class="nav-links"><a href="home.php">Home</a><a href="repository.php">Repository</a><a href="activity_log.php">Activity Log</a><a href="manage_users.php">Users</a><a href="manage_offices.php">Offices</a><?php render_profile_dropdown('admin_profile.php', 'Admin Profile'); ?></nav></div></header>
+<header class="topbar"><div class="nav-wrap"><div class="brand"><span class="brand-icon"><img src="assets/sbc-logo.png" alt="St. Bridget College" style="width:100%;height:100%;object-fit:contain"></span><?php sc_span($siteContent, 'home.brand', 'SBC Quality Assurance Electronic Documentation Dashboard'); ?></div><nav class="nav-links"><a href="home.php">Home</a><a href="repository.php">Repository</a><?php if(current_user_can($conn, 'activity_log.view')): ?><a href="activity_log.php">Activity Log</a><?php endif; ?><?php if(current_user_can($conn, 'users.manage')): ?><a href="manage_users.php">Users</a><?php endif; ?><?php if(current_user_can($conn, 'offices.manage')): ?><a href="manage_offices.php">Offices</a><?php endif; ?><?php if(current_user_can($conn, 'roles.manage')): ?><a href="manage_roles.php">Roles</a><?php endif; ?><?php render_profile_dropdown('admin_profile.php', 'Admin Profile'); ?></nav></div></header>
 <main class="dashboard">
 <section class="panel panel-pad">
     <h2 class="panel-title"><i class="bi bi-clock-history"></i> Activity Log</h2>

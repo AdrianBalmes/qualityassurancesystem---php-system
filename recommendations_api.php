@@ -7,14 +7,15 @@ require_once __DIR__ . "/office_directory.php";
 require_once __DIR__ . "/audit_log_helper.php";
 require_once __DIR__ . "/review_columns.php";
 require_once __DIR__ . "/in_charge.php";
+require_once __DIR__ . "/office_statuses.php";
 header('Content-Type: application/json');
 
 $action = $_POST['action'] ?? '';
 $isAdmin = isset($_SESSION['admin_username']) && $_SESSION['admin_role'] === 'admin';
 
-// Everything here is the administrator's, except naming who is in charge --
-// an office does that on its own recommendations.
-if(!$isAdmin && !($action === 'save_in_charge' && isset($_SESSION['office_username']))){
+// Everything here is the administrator's. Offices do not assign who is in
+// charge; the office dashboard no longer offers it, and this refuses it too.
+if(!$isAdmin){
     http_response_code(403);
     echo json_encode(['ok' => false, 'error' => 'Unauthorized']);
     exit();
@@ -191,6 +192,113 @@ if($action === 'save_in_charge'){
     exit();
 }
 
+// ---- Each office's own status options ------------------------------------
+// Built-in statuses are shared; anything added here belongs to one office and
+// is invisible to every other.
+function status_manager_reply($conn, $office, $extra = []){
+    echo json_encode(array_merge([
+        'ok'       => true,
+        'office'   => $office,
+        'statuses' => office_status_choices($conn, $office),
+        'custom'   => office_custom_status_rows($conn, $office),
+    ], $extra));
+    exit();
+}
+
+function status_manager_fail($message, $code = 400){
+    http_response_code($code);
+    echo json_encode(['ok' => false, 'error' => $message]);
+    exit();
+}
+
+if($action === 'list_office_statuses' || $action === 'add_office_status'
+   || $action === 'rename_office_status' || $action === 'delete_office_status'){
+    ensure_office_statuses_table($conn);
+
+    $office = trim($_POST['office'] ?? '');
+    if($action !== 'list_office_statuses' && $action !== 'add_office_status' && (int) ($_POST['id'] ?? 0) > 0){
+        // Rename and delete are addressed by id; the office comes from the row
+        // so one office cannot touch another's statuses by naming it.
+        $idStmt = $conn->prepare("SELECT office FROM office_statuses WHERE id = ? LIMIT 1");
+        $idStmt->bind_param("i", $_POST['id']);
+        $idStmt->execute();
+        $found = $idStmt->get_result()->fetch_assoc();
+        if($found){ $office = $found['office']; }
+    }
+    if($office === '' || !in_array($office, get_all_office_names($conn), true)){
+        status_manager_fail('Office is not recognized');
+    }
+
+    if($action === 'list_office_statuses'){
+        status_manager_reply($conn, $office);
+    }
+
+    if($action === 'add_office_status'){
+        $name = trim($_POST['name'] ?? '');
+        $problem = office_status_name_problem($conn, $office, $name);
+        if($problem !== ''){ status_manager_fail($problem); }
+
+        $stmt = $conn->prepare("INSERT INTO office_statuses (office, name, created_by) VALUES (?,?,?)");
+        $stmt->bind_param("sss", $office, $name, $adminUsername);
+        $stmt->execute();
+        log_audit_event($conn, $adminUsername, 'admin', $office, 'status_created', 'office_status', $conn->insert_id,
+            "Added the status \"{$name}\" for {$office}");
+        status_manager_reply($conn, $office, ['message' => "Added {$name}."]);
+    }
+
+    $statusId = intval($_POST['id'] ?? 0);
+    $rowStmt = $conn->prepare("SELECT id, office, name FROM office_statuses WHERE id = ? LIMIT 1");
+    $rowStmt->bind_param("i", $statusId);
+    $rowStmt->execute();
+    $status = $rowStmt->get_result()->fetch_assoc();
+    if(!$status){
+        status_manager_fail('That status no longer exists', 404);
+    }
+
+    if($action === 'rename_office_status'){
+        $newName = trim($_POST['name'] ?? '');
+        if($newName === $status['name']){
+            status_manager_reply($conn, $office);
+        }
+        $problem = office_status_name_problem($conn, $office, $newName, $statusId);
+        if($problem !== ''){ status_manager_fail($problem); }
+
+        // Recommendations store the status by name, so they follow the rename.
+        $conn->begin_transaction();
+        try {
+            $up = $conn->prepare("UPDATE office_statuses SET name = ? WHERE id = ?");
+            $up->bind_param("si", $newName, $statusId);
+            $up->execute();
+            $recs = $conn->prepare("UPDATE audit_recommendations SET status = ? WHERE office = ? AND status = ?");
+            $recs->bind_param("sss", $newName, $office, $status['name']);
+            $recs->execute();
+            $moved = $conn->affected_rows;
+            $conn->commit();
+        } catch(Throwable $e){
+            $conn->rollback();
+            status_manager_fail('Could not rename that status', 500);
+        }
+        log_audit_event($conn, $adminUsername, 'admin', $office, 'status_updated', 'office_status', $statusId,
+            "Renamed the {$office} status \"{$status['name']}\" to \"{$newName}\" ({$moved} recommendation(s) updated)");
+        status_manager_reply($conn, $office, ['message' => "Renamed to {$newName}.", 'renamed_from' => $status['name']]);
+    }
+
+    // delete_office_status
+    $useStmt = $conn->prepare("SELECT COUNT(*) AS n FROM audit_recommendations WHERE office = ? AND status = ?");
+    $useStmt->bind_param("ss", $office, $status['name']);
+    $useStmt->execute();
+    $inUse = (int) $useStmt->get_result()->fetch_assoc()['n'];
+    if($inUse > 0){
+        status_manager_fail("\"{$status['name']}\" is set on {$inUse} recommendation(s). Change those to another status first.");
+    }
+    $del = $conn->prepare("DELETE FROM office_statuses WHERE id = ?");
+    $del->bind_param("i", $statusId);
+    $del->execute();
+    log_audit_event($conn, $adminUsername, 'admin', $office, 'status_deleted', 'office_status', $statusId,
+        "Deleted the {$office} status \"{$status['name']}\"");
+    status_manager_reply($conn, $office, ['message' => "Deleted {$status['name']}.", 'deleted' => $status['name']]);
+}
+
 if($action === 'save_office_recommendation'){
     $id = intval($_POST['id'] ?? 0);
     $recommendation = trim($_POST['recommendation'] ?? '');
@@ -212,7 +320,16 @@ if($action === 'save_office_recommendation'){
         echo json_encode(['ok' => false, 'error' => 'Invalid row']);
         exit();
     }
-    if(!in_array($status, ['Pending', 'Submitted', 'Not Submitted', 'Approved', 'Rejected', 'Needs Revision', 'Completed'], true)){
+    // What counts as valid depends on the recommendation's own office: the
+    // built-in statuses plus that office's custom ones, and never another's.
+    $ownerStmt = $conn->prepare("SELECT office, status FROM audit_recommendations WHERE id = ? LIMIT 1");
+    $ownerStmt->bind_param("i", $id);
+    $ownerStmt->execute();
+    $owner = $ownerStmt->get_result()->fetch_assoc();
+    $allowedStatuses = $owner ? office_status_choices($conn, $owner['office']) : OFFICE_STATUS_BUILTIN;
+    // Keeping the status a row already has is always fine, even if it has since
+    // been removed from the list.
+    if(!in_array($status, $allowedStatuses, true) && !($owner && $owner['status'] === $status)){
         http_response_code(400);
         echo json_encode(['ok' => false, 'error' => 'Invalid status']);
         exit();

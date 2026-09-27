@@ -93,6 +93,12 @@ if($selectedArea !== '' && $selectedArea !== AUDIT_AREA_UNASSIGNED
 $gridFilters = recommendation_filters_from_request($_GET);
 $filtersActive = recommendation_filters_active($gridFilters);
 $filterOptions = recommendation_filter_options($conn, $selectedAudit);
+// The Status filter and each row's status menu offer the built-in statuses plus
+// the ones the office being viewed has added for itself.
+$statusFilterChoices = $selectedOffice !== ''
+    ? office_status_choices($conn, $selectedOffice)
+    : office_status_choices_for_audit($conn, $selectedAudit);
+$customStatusMap = office_custom_status_map($conn);
 
 $showingPrograms = !$filtersActive && office_has_programs($selectedOffice) && $selectedProgram === '';
 $showingAreas = !$filtersActive && !$showingPrograms && office_has_areas($selectedOffice) && $selectedArea === '';
@@ -170,6 +176,20 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
 .area-purple .area-total{background:#efe9fb;color:#5b3fa0}
 .area-blue{border-left:3px solid #316fc4}
 @media(prefers-reduced-motion:reduce){.prog-card{transition:none}.prog-card:hover{transform:none}}
+.status-builtin-list{display:flex;flex-wrap:wrap;gap:6px}
+.status-builtin-list span{background:#eef1f6;color:#4c5a72;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:800}
+.status-custom-list{display:grid;gap:8px}
+.status-custom-row{display:flex;gap:8px;align-items:center}
+.status-custom-row input{flex:1;min-width:0;border:1px solid #cfd9e8;border-radius:5px;padding:7px 10px;font-size:13.5px}
+.status-custom-row .status-use{font-size:11.5px;font-weight:800;color:#66758d;white-space:nowrap}
+.status-mini{border:0;border-radius:5px;font-weight:800;font-size:12px;padding:7px 10px;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+.status-mini.save{background:#316fc4;color:#fff}
+.status-mini.del{background:#ffe1dc;color:#a33831}
+.status-mini[disabled]{background:#f1f3f7;color:#b3bccb;cursor:not-allowed}
+.status-add-form{display:flex;gap:8px}
+.status-add-form input{flex:1;min-width:0;border:1px solid #cfd9e8;border-radius:6px;padding:9px 11px;font-size:13.5px}
+.status-msg{min-height:18px;font-size:12.5px;font-weight:700}
+.status-msg.error{color:#a33831}.status-msg.ok{color:#277548}
 .back-areas-btn{min-height:32px;border:1px solid #c8d4e7;border-radius:5px;background:#fff;color:#2e67b8;font-weight:800;font-size:12.5px;padding:6px 12px;display:inline-flex;align-items:center;gap:6px;cursor:pointer}
 .back-areas-btn:hover{background:#eef4ff}
 @media(prefers-reduced-motion:reduce){.area-card{transition:none}.area-card:hover{transform:none}}
@@ -243,7 +263,7 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
         </select>
         <select id="filterStatus" class="grid-filter-select" aria-label="Filter by status of submission">
             <option value="">Any status</option>
-            <?php foreach(['Pending', 'Submitted', 'Not Submitted', 'Approved', 'Needs Revision', 'Rejected', 'Completed'] as $statusChoice): ?>
+            <?php foreach($statusFilterChoices as $statusChoice): ?>
             <option value="<?php echo htmlspecialchars($statusChoice, ENT_QUOTES); ?>"<?php echo $gridFilters['status'] === $statusChoice ? ' selected' : ''; ?>><?php echo htmlspecialchars($statusChoice, ENT_QUOTES); ?></option>
             <?php endforeach; ?>
         </select>
@@ -257,6 +277,7 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
             <?php endforeach; ?>
         </select>
         <button type="button" id="filterClear" class="grid-filter-clear"><i class="bi bi-x-lg"></i> Clear</button>
+        <button type="button" id="manageStatusesBtn" class="grid-filter-clear" <?php echo $selectedOffice === '' ? 'style="display:none"' : ''; ?>><i class="bi bi-sliders"></i> Manage statuses</button>
         <span class="grid-filter-count" id="gridCount"><?php
             if($filtersActive){
                 $matchCount = count($auditRecommendations);
@@ -289,7 +310,7 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
                 } else {
                     $auditRecIds = array_map(function($row){ return (int) $row['id']; }, $auditRecommendations);
                     $auditDocsByRecommendation = fetch_recommendation_documents_map($conn, $auditRecIds);
-                    $auditRecRendered = render_office_recommendation_rows($auditRecommendations, $selectedOffice, $selectedAudit, $auditDocsByRecommendation, $filtersActive);
+                    $auditRecRendered = render_office_recommendation_rows($auditRecommendations, $selectedOffice, $selectedAudit, $auditDocsByRecommendation, $filtersActive, $customStatusMap);
                     echo $auditRecRendered['html'];
                 }
                 ?>
@@ -307,6 +328,34 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
     <div class="doc-sidebar-rec" id="docSidebarRecText"></div>
     <div class="doc-sidebar-body" id="docSidebarBody"></div>
 </aside>
+<div class="review-modal-backdrop" id="statusModalBackdrop">
+    <div class="review-modal" role="dialog" aria-modal="true" aria-labelledby="statusModalTitle">
+        <div class="review-modal-head">
+            <h3 id="statusModalTitle"><i class="bi bi-sliders"></i> Statuses</h3>
+            <button type="button" class="doc-sidebar-close" id="statusModalClose" aria-label="Close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="review-modal-body">
+            <div class="muted-copy" id="statusModalNote"></div>
+            <div>
+                <span class="review-field-label">Available to every office</span>
+                <div class="status-builtin-list" id="statusBuiltinList"></div>
+            </div>
+            <div>
+                <span class="review-field-label">Added for this office</span>
+                <div id="statusCustomList" class="status-custom-list"></div>
+            </div>
+            <form id="statusAddForm" class="status-add-form" autocomplete="off">
+                <input type="text" id="statusNewName" maxlength="40" placeholder="New status, e.g. Awaiting Board Approval" aria-label="New status name">
+                <button type="submit" class="review-btn review-btn-completed"><i class="bi bi-plus-lg"></i> Add</button>
+            </form>
+            <div class="status-msg" id="statusMsg" role="status" aria-live="polite"></div>
+        </div>
+        <div class="review-modal-footer">
+            <button type="button" class="review-btn review-btn-cancel" id="statusModalDone">Done</button>
+        </div>
+    </div>
+</div>
+
 <div class="review-modal-backdrop" id="reviewModalBackdrop">
     <div class="review-modal" role="dialog" aria-modal="true" aria-labelledby="reviewModalTitle">
         <div class="review-modal-head">
@@ -742,6 +791,8 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
 (function(){
     var selectedAudit = <?php echo json_encode($selectedAudit); ?>;
     var currentOffice = <?php echo json_encode($selectedOffice); ?>;
+    var currentStatuses = <?php echo json_encode($statusFilterChoices); ?>;
+    var BUILTIN_STATUSES = <?php echo json_encode(OFFICE_STATUS_BUILTIN); ?>;
     var currentArea = <?php echo json_encode($selectedArea); ?>;
     var currentProgram = <?php echo json_encode($selectedProgram); ?>;
     var officeTabs = document.getElementById('officeTabs');
@@ -756,6 +807,7 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
     var filterYear = document.getElementById('filterYear');
     var filterClear = document.getElementById('filterClear');
     var gridCount = document.getElementById('gridCount');
+    var manageStatusesBtn = document.getElementById('manageStatusesBtn');
 
     function currentFilters(){
         return {
@@ -819,13 +871,9 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
         tr.innerHTML =
             leadCellsHtml +
             "<td><select class='cell-select status-select chip-steel' data-field='status'>" +
-                "<option value='Pending' selected>Pending</option>" +
-                "<option value='Submitted'>Submitted</option>" +
-                "<option value='Not Submitted'>Not Submitted</option>" +
-                "<option value='Approved'>Approved</option>" +
-                "<option value='Needs Revision'>Needs Revision</option>" +
-                "<option value='Rejected'>Rejected</option>" +
-                "<option value='Completed'>Completed</option>" +
+                currentStatuses.map(function(name){
+                    return "<option value='" + escapeHtml(name) + "'" + (name === 'Pending' ? ' selected' : '') + ">" + escapeHtml(name) + "</option>";
+                }).join('') +
             "</select></td>" +
             "<td><div class='cell-text' contenteditable='true' data-field='remarks'></div></td>" +
             "<td><span class='muted-copy'>No document submitted</span></td>" +
@@ -956,6 +1004,25 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
 
     // One loader for all three ways of moving around: picking an office tile,
     // opening an area card, and stepping back out to the areas.
+    // The Status filter lists what the office on screen can use. Whatever was
+    // chosen stays chosen only if it is still on the list.
+    function applyStatusOptions(names){
+        if(!names || !filterStatus){ return; }
+        currentStatuses = names;
+        var keep = filterStatus.value;
+        filterStatus.innerHTML = "<option value=''>Any status</option>" + names.map(function(name){
+            return "<option value='" + escapeHtml(name) + "'>" + escapeHtml(name) + "</option>";
+        }).join('');
+        filterStatus.value = names.indexOf(keep) !== -1 ? keep : '';
+    }
+
+    function resetFiltersToDefault(){
+        if(filterSearch){ filterSearch.value = ''; }
+        [filterInCharge, filterStatus, filterYear].forEach(function(control){
+            if(control){ control.value = ''; }
+        });
+    }
+
     function loadGrid(office, program, area){
         auditTbody.innerHTML = "<tr><td colspan='" + gridColumnCount(office) + "' class='empty-state'>Loading&hellip;</td></tr>";
 
@@ -979,6 +1046,8 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
                 auditTbody.innerHTML = data.html;
                 auditTitle.textContent = data.title;
                 updateGridHeader(currentOffice);
+                applyStatusOptions(data.statuses);
+                if(manageStatusesBtn){ manageStatusesBtn.style.display = currentOffice === '' ? 'none' : ''; }
                 initInChargeCells(auditTbody);
 
                 // Add Row needs somewhere to file the recommendation: not on
@@ -1046,6 +1115,137 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
         });
     }
 
+    // ---- Manage this office's own statuses ---------------------------------
+    var statusBackdrop = document.getElementById('statusModalBackdrop');
+    var statusMsgEl = document.getElementById('statusMsg');
+    var statusCustomList = document.getElementById('statusCustomList');
+    var statusAddForm = document.getElementById('statusAddForm');
+    var statusNewName = document.getElementById('statusNewName');
+
+    function showStatusMsg(text, kind){
+        statusMsgEl.textContent = text || '';
+        statusMsgEl.className = 'status-msg' + (kind ? ' ' + kind : '');
+    }
+
+    function statusRequest(fields){
+        var body = Object.keys(fields).map(function(k){
+            return encodeURIComponent(k) + '=' + encodeURIComponent(fields[k]);
+        }).join('&');
+        return fetch('recommendations_api.php', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: body
+        }).then(function(res){ return res.json(); }).then(function(data){
+            if(!data.ok){ throw new Error(data.error || 'Something went wrong'); }
+            return data;
+        });
+    }
+
+    function renderStatusManager(data){
+        document.getElementById('statusModalTitle').innerHTML = "<i class='bi bi-sliders'></i> ";
+        document.getElementById('statusModalTitle').appendChild(document.createTextNode('Statuses — ' + data.office));
+        document.getElementById('statusModalNote').textContent =
+            'Statuses you add here belong to ' + data.office + ' only. Other offices do not see them.';
+
+        var builtin = document.getElementById('statusBuiltinList');
+        builtin.innerHTML = '';
+        BUILTIN_STATUSES.forEach(function(name){
+            var chip = document.createElement('span');
+            chip.textContent = name;
+            builtin.appendChild(chip);
+        });
+
+        statusCustomList.innerHTML = '';
+        if(!data.custom.length){
+            var none = document.createElement('div');
+            none.className = 'muted-copy';
+            none.textContent = 'None yet.';
+            statusCustomList.appendChild(none);
+        }
+        data.custom.forEach(function(item){
+            var row = document.createElement('div');
+            row.className = 'status-custom-row';
+
+            var input = document.createElement('input');
+            input.type = 'text';
+            input.maxLength = 40;
+            input.value = item.name;
+            input.setAttribute('aria-label', 'Status name');
+
+            var use = document.createElement('span');
+            use.className = 'status-use';
+            var n = parseInt(item.in_use, 10) || 0;
+            use.textContent = n + (n === 1 ? ' recommendation' : ' recommendations');
+
+            var save = document.createElement('button');
+            save.type = 'button'; save.className = 'status-mini save'; save.textContent = 'Rename';
+            save.addEventListener('click', function(){
+                if(input.value.trim() === item.name){ return; }
+                statusRequest({action: 'rename_office_status', id: item.id, name: input.value.trim()})
+                    .then(function(res){ afterStatusChange(res, item.name); })
+                    .catch(function(err){ showStatusMsg(err.message, 'error'); });
+            });
+
+            var del = document.createElement('button');
+            del.type = 'button'; del.className = 'status-mini del';
+            del.innerHTML = "<i class='bi bi-trash3'></i>";
+            del.setAttribute('aria-label', 'Delete ' + item.name);
+            if(n > 0){
+                del.disabled = true;
+                del.title = 'Still set on ' + n + ' recommendation(s)';
+            }
+            del.addEventListener('click', function(){
+                if(!window.confirm('Delete the status "' + item.name + '" for ' + data.office + '?')){ return; }
+                statusRequest({action: 'delete_office_status', id: item.id})
+                    .then(function(res){ afterStatusChange(res, item.name); })
+                    .catch(function(err){ showStatusMsg(err.message, 'error'); });
+            });
+
+            row.appendChild(input); row.appendChild(use); row.appendChild(save); row.appendChild(del);
+            statusCustomList.appendChild(row);
+        });
+    }
+
+    // After any change: refresh the menus, drop a filter that no longer exists,
+    // and redraw the grid so rows pick up the new options.
+    function afterStatusChange(res, oldName){
+        renderStatusManager(res);
+        showStatusMsg(res.message || 'Saved.', 'ok');
+        if(filterStatus && filterStatus.value === oldName && (res.renamed_from || res.deleted)){
+            filterStatus.value = '';
+        }
+        applyStatusOptions(res.statuses);
+        loadGrid(currentOffice, currentProgram, currentArea);
+    }
+
+    function openStatusManager(){
+        if(currentOffice === ''){ return; }
+        showStatusMsg('');
+        statusNewName.value = '';
+        statusBackdrop.classList.add('is-open');
+        statusRequest({action: 'list_office_statuses', office: currentOffice})
+            .then(renderStatusManager)
+            .catch(function(err){ showStatusMsg(err.message, 'error'); });
+        statusNewName.focus();
+    }
+    function closeStatusManager(){ statusBackdrop.classList.remove('is-open'); }
+
+    if(manageStatusesBtn){ manageStatusesBtn.addEventListener('click', openStatusManager); }
+    document.getElementById('statusModalClose').addEventListener('click', closeStatusManager);
+    document.getElementById('statusModalDone').addEventListener('click', closeStatusManager);
+    statusBackdrop.addEventListener('click', function(e){ if(e.target === statusBackdrop){ closeStatusManager(); } });
+    document.addEventListener('keydown', function(e){
+        if(e.key === 'Escape' && statusBackdrop.classList.contains('is-open')){ closeStatusManager(); }
+    });
+    statusAddForm.addEventListener('submit', function(e){
+        e.preventDefault();
+        var name = statusNewName.value.trim();
+        if(name === ''){ showStatusMsg('Enter a status name.', 'error'); return; }
+        statusRequest({action: 'add_office_status', office: currentOffice, name: name})
+            .then(function(res){ statusNewName.value = ''; afterStatusChange(res, ''); })
+            .catch(function(err){ showStatusMsg(err.message, 'error'); });
+    });
+
     officeTabs.addEventListener('click', function(e){
         var tile = e.target.closest('.office-tile');
         if(!tile){ return; }
@@ -1055,7 +1255,10 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
         officeTabs.querySelectorAll('.office-tile').forEach(function(t){ t.classList.remove('active'); });
         tile.classList.add('active');
 
-        // Switching office always starts at that office's top level.
+        // Switching office starts at that office's top level with the filters
+        // back at Anyone in charge / Any status / Any year, so nothing chosen
+        // for the last office quietly hides rows in this one.
+        resetFiltersToDefault();
         loadGrid(office, '', '');
     });
 

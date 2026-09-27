@@ -3,6 +3,7 @@
 require_once __DIR__ . "/audit_areas.php";
 require_once __DIR__ . "/recommendation_rules.php";
 require_once __DIR__ . "/in_charge.php";
+require_once __DIR__ . "/office_statuses.php";
 
 /**
  * How wide a full-width row has to be to span the grid. The Office column is
@@ -186,10 +187,14 @@ function fetch_recommendation_documents_map($conn, $recIds){
     return $docsByRecommendation;
 }
 
-function render_office_recommendation_rows($rows, $selectedOffice, $selectedAudit, $docsByRecommendation = [], $filtersActive = false){
+/**
+ * $customStatuses is office_custom_status_map(): each row's status menu offers
+ * the built-in statuses plus its own office's, so a grid of several offices
+ * never offers one office another's custom option.
+ */
+function render_office_recommendation_rows($rows, $selectedOffice, $selectedAudit, $docsByRecommendation = [], $filtersActive = false, $customStatuses = []){
     $html = "";
     $count = count($rows);
-    $statusChoices = ['Pending', 'Submitted', 'Not Submitted', 'Approved', 'Needs Revision', 'Rejected', 'Completed'];
     // A single External office drops the Office column -- every row in that
     // view belongs to it. Internal Audit keeps the column even with one office
     // selected, same as the "All Offices" view.
@@ -230,6 +235,11 @@ function render_office_recommendation_rows($rows, $selectedOffice, $selectedAudi
         // Same colour the office sees on its own dashboard for this status.
         $statusChipClass = review_status_chip_info($row['status'])['class'];
         $statusOptions = "";
+        $statusChoices = array_merge(OFFICE_STATUS_BUILTIN, $customStatuses[$row['office']] ?? []);
+        // A row keeps showing the status it has even if that option was removed.
+        if(!in_array($row['status'], $statusChoices, true)){
+            $statusChoices[] = $row['status'];
+        }
         foreach($statusChoices as $option){
             $sel = $row['status'] === $option ? " selected" : "";
             $safeOption = htmlspecialchars($option, ENT_QUOTES);

@@ -7,6 +7,7 @@ require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/office_directory.php";
 require_once __DIR__ . "/audit_classification.php";
 require_once __DIR__ . "/audit_log_helper.php";
+require_once __DIR__ . "/office_statuses.php";
 require_once __DIR__ . "/nav_dropdown.php";
 
 if(!isset($_SESSION['admin_username']) || $_SESSION['admin_role'] !== 'admin'){
@@ -87,6 +88,7 @@ if(isset($_POST['update_office'])){
 
     // The office name is stored as text on every related row, so a rename has
     // to carry them along or their records are orphaned. All or nothing.
+    ensure_office_statuses_table($conn);
     $conn->begin_transaction();
     try {
         $update = $conn->prepare("UPDATE offices SET name = ?, audit_type = ? WHERE id = ?");
@@ -97,7 +99,7 @@ if(isset($_POST['update_office'])){
         if($newName !== $office['name']){
             // documents is the repository's own table; missing it here left
             // a renamed office unable to open its older repository files.
-            foreach(['users', 'audit_recommendations', 'recommendation_documents', 'documents'] as $table){
+            foreach(['users', 'audit_recommendations', 'recommendation_documents', 'documents', 'office_statuses'] as $table){
                 $cascade = $conn->prepare("UPDATE `{$table}` SET office = ? WHERE office = ?");
                 $cascade->bind_param("ss", $newName, $office['name']);
                 $cascade->execute();
@@ -152,6 +154,12 @@ if(isset($_POST['delete_office'])){
             'danger'
         );
     }
+
+    // Its own custom statuses go with it; nothing else can be using them.
+    ensure_office_statuses_table($conn);
+    $dropStatuses = $conn->prepare("DELETE FROM office_statuses WHERE office = ?");
+    $dropStatuses->bind_param("s", $office['name']);
+    $dropStatuses->execute();
 
     $delete = $conn->prepare("DELETE FROM offices WHERE id = ?");
     $delete->bind_param("i", $officeId);
@@ -232,7 +240,7 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
 
     <section class="panel panel-pad">
         <h2 class="panel-title"><i class="bi bi-plus-circle"></i> Add an office</h2>
-        <form method="POST" class="add-row">
+        <form method="POST" class="add-row" id="addOfficeForm">
             <div class="add-field" style="flex:1 1 260px">
                 <label for="newName">Office name</label>
                 <input type="text" id="newName" name="name" maxlength="100" placeholder="e.g. Research Office" required>
@@ -269,9 +277,9 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
                 ?>
                     <?php $formId = "office-" . (int) $row['id']; ?>
                     <tr>
-                        <td><input type="text" class="cell-input" form="<?php echo $formId; ?>" name="name" maxlength="100" value="<?php echo htmlspecialchars($row['name'], ENT_QUOTES); ?>" required></td>
+                        <td><input type="text" class="cell-input" form="<?php echo $formId; ?>" name="name" maxlength="100" value="<?php echo htmlspecialchars($row['name'], ENT_QUOTES); ?>" data-original="<?php echo htmlspecialchars($row['name'], ENT_QUOTES); ?>" required></td>
                         <td>
-                            <select class="cell-select" form="<?php echo $formId; ?>" name="audit_type">
+                            <select class="cell-select" form="<?php echo $formId; ?>" name="audit_type" data-original="<?php echo htmlspecialchars($row['audit_type'] === 'External' ? 'External' : 'Internal', ENT_QUOTES); ?>">
                                 <option value="Internal"<?php echo $row['audit_type'] !== 'External' ? ' selected' : ''; ?>>Internal</option>
                                 <option value="External"<?php echo $row['audit_type'] === 'External' ? ' selected' : ''; ?>>External</option>
                             </select>
@@ -308,5 +316,51 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
         </div>
     </section>
 </main>
+<script>
+(function(){
+    // Yes/No before an office is added or changed. Listening for submit rather
+    // than click means the browser's required-field check has already passed.
+    var addForm = document.getElementById('addOfficeForm');
+    if(addForm){
+        addForm.addEventListener('submit', function(e){
+            var name = addForm.elements['name'].value.trim();
+            var type = addForm.elements['audit_type'].value;
+            if(!window.confirm('Add "' + name + '" as an ' + type + ' audit office?')){
+                e.preventDefault();
+            }
+        });
+    }
+
+    document.querySelectorAll('form[id^="office-"]').forEach(function(form){
+        form.addEventListener('submit', function(e){
+            // Delete has its own prompt on the button.
+            if(!e.submitter || e.submitter.name !== 'update_office'){ return; }
+
+            var nameField = document.querySelector('[form="' + form.id + '"][name="name"]');
+            var typeField = document.querySelector('[form="' + form.id + '"][name="audit_type"]');
+            var oldName = nameField.getAttribute('data-original');
+            var newName = nameField.value.trim();
+            var oldType = typeField.getAttribute('data-original');
+            var newType = typeField.value;
+
+            var changes = [];
+            if(newName !== oldName){
+                changes.push('Rename "' + oldName + '" to "' + newName + '"?\n\nEvery account and recommendation in this office will follow the new name.');
+            }
+            if(newType !== oldType){
+                changes.push('Move "' + newName + '" from ' + oldType + ' to ' + newType + ' audit?\n\nIts recommendations move with it.');
+            }
+            if(changes.length === 0){
+                e.preventDefault();
+                window.alert('Nothing has changed for "' + oldName + '".');
+                return;
+            }
+            if(!window.confirm(changes.join('\n\n'))){
+                e.preventDefault();
+            }
+        });
+    });
+})();
+</script>
 </body>
 </html>

@@ -30,6 +30,9 @@ $knownActions = [
     'office_created' => 'Office Created',
     'office_updated' => 'Office Updated',
     'office_deleted' => 'Office Deleted',
+    'status_created' => 'Status Created',
+    'status_updated' => 'Status Updated',
+    'status_deleted' => 'Status Deleted',
     'recommendation_created' => 'Recommendation Created',
     'recommendation_updated' => 'Recommendation Updated',
     'recommendation_deleted' => 'Recommendation Deleted',
@@ -37,6 +40,7 @@ $knownActions = [
     'document_deleted' => 'Document Deleted',
     'compliance_submitted' => 'Compliance Submitted',
     'profile_updated' => 'Profile Updated',
+    'password_changed' => 'Password Changed',
 ];
 
 $filterOffice = isset($_GET['office']) ? trim($_GET['office']) : '';

@@ -19,57 +19,6 @@ enforce_active_account($conn);
 $isAdmin = session_is_qa_staff();
 $userOffice = isset($_SESSION['office_name']) ? $_SESSION['office_name'] : '';
 
-if($isAdmin && isset($_POST['set_file_link'])){
-    $documentId = intval($_POST['document_id'] ?? 0);
-    $fileLink = trim($_POST['file_link'] ?? '');
-
-    // FILTER_VALIDATE_URL alone accepts "javascript://..." -- which then runs
-    // as script when the viewer embeds or opens the link. Web links only.
-    if($fileLink !== '' && (!filter_var($fileLink, FILTER_VALIDATE_URL) || !preg_match('#^https?://#i', $fileLink))){
-        echo "<script>alert('Enter a valid link URL, or leave it blank to remove the link.'); window.location='repository.php';</script>";
-        exit();
-    }
-
-    $docStmt = $conn->prepare("SELECT office, title FROM documents WHERE id = ? LIMIT 1");
-    $docStmt->bind_param("i", $documentId);
-    $docStmt->execute();
-    $docRow = $docStmt->get_result()->fetch_assoc();
-
-    if($docRow){
-        $updateStmt = $conn->prepare("UPDATE documents SET file_link = ? WHERE id = ?");
-        $updateStmt->bind_param("si", $fileLink, $documentId);
-        $updateStmt->execute();
-
-        $actionLabel = $fileLink !== '' ? 'document_link_updated' : 'document_link_removed';
-        $description = $fileLink !== ''
-            ? "Admin linked \"{$docRow['title']}\" ({$docRow['office']}) to a OneDrive URL"
-            : "Admin removed the OneDrive link from \"{$docRow['title']}\" ({$docRow['office']})";
-        log_audit_event($conn, $_SESSION['admin_username'], 'admin', $docRow['office'], $actionLabel, 'document', $documentId, $description);
-    }
-
-    header("Location: repository.php");
-    exit();
-}
-
-$officeNames = [];
-if($isAdmin){
-    $officeResult = mysqli_query($conn, "SELECT DISTINCT office FROM documents WHERE office <> '' AND approval_status='Approved' ORDER BY office ASC");
-    if($officeResult){
-        while($officeRow = mysqli_fetch_assoc($officeResult)){
-            $officeNames[] = $officeRow['office'];
-        }
-    }
-    $documents = mysqli_query($conn, "SELECT * FROM documents WHERE approval_status='Approved' ORDER BY id DESC");
-} else {
-    $officeNames[] = $userOffice;
-    $docStmt = $conn->prepare("SELECT * FROM documents WHERE office = ? AND approval_status='Approved' ORDER BY id DESC");
-    $docStmt->bind_param("s", $userOffice);
-    $docStmt->execute();
-    $documents = $docStmt->get_result();
-}
-$documentRows = $documents ? $documents->fetch_all(MYSQLI_ASSOC) : [];
-$totalDocs = count($documentRows);
-$onedriveCount = count(array_filter($documentRows, function($row){ return !empty($row['file_link']); }));
 
 /**
  * One folder per department, counting the supporting documents offices upload
@@ -209,11 +158,9 @@ body{margin:0;background:#f4f6f9;color:#26354b;font-family:-apple-system,BlinkMa
     <div class="page-head">
         <div>
             <h1 class="page-title">Repository</h1>
-            <p class="page-subtitle">Search, view, and download approved document files.</p>
+            <p class="page-subtitle">Every department's folder of files submitted with their compliance updates.</p>
         </div>
         <div class="summary-pills">
-            <span class="summary-pill"><i class="bi bi-files"></i> <?php echo $totalDocs; ?> file<?php echo $totalDocs === 1 ? '' : 's'; ?></span>
-            <span class="summary-pill"><i class="bi bi-cloud-check"></i> <?php echo $onedriveCount; ?> linked to OneDrive</span>
             <?php if($isAdmin): ?>
             <span class="summary-pill"><i class="bi bi-folder-fill"></i> <?php echo count($departmentFolders); ?> department<?php echo count($departmentFolders) === 1 ? '' : 's'; ?> &middot; <?php echo $departmentFileTotal; ?> file<?php echo $departmentFileTotal === 1 ? '' : 's'; ?></span>
             <?php endif; ?>
@@ -252,116 +199,23 @@ body{margin:0;background:#f4f6f9;color:#26354b;font-family:-apple-system,BlinkMa
         <?php endif; ?>
         <p class="repo-summary" id="folderNoMatch" style="display:none;margin-top:14px">No department matches that search.</p>
     </section>
-    <?php endif; ?>
-
+    <?php else: ?>
+    <?php /* The folder grid is the whole page for an administrator. An office
+             sees its own files beside the recommendation they belong to, so it
+             is pointed there rather than left looking at an empty page. */ ?>
     <section class="card">
-        <div class="repo-controls">
-            <input type="search" class="field-input" id="repositorySearch" placeholder="Search title, file, or office">
-            <select class="field-select" id="repositoryOffice">
-                <option value="">All offices</option>
-                <?php foreach($officeNames as $officeName){ $safeOffice = htmlspecialchars($officeName, ENT_QUOTES); echo "<option value='{$safeOffice}'>{$safeOffice}</option>"; } ?>
-            </select>
-        </div>
-        <p class="repo-summary"><span id="repositoryCount">0</span> file(s) shown</p>
-        <div class="table-wrap">
-            <table class="repo-table">
-                <thead>
-                    <tr>
-                        <th>Office</th>
-                        <th>Title / File</th>
-                        <th>Storage</th>
-                        <th style="width:<?php echo $isAdmin ? '260px' : '170px'; ?>">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php
-                    if(!empty($documentRows)){
-                        foreach($documentRows as $row){
-                            $id = (int) $row['id'];
-                            $office = htmlspecialchars($row['office'], ENT_QUOTES);
-                            $title = htmlspecialchars($row['title'], ENT_QUOTES);
-                            $fileName = htmlspecialchars($row['file_name'], ENT_QUOTES);
-                            $hasLink = !empty($row['file_link']);
-                            $safeFileLink = htmlspecialchars($row['file_link'] ?? '', ENT_QUOTES);
-                            $viewUrl = "view_document.php?id={$id}";
-                            $downloadUrl = "download_document.php?id={$id}";
-                            $searchText = htmlspecialchars(strtolower($row['office'] . " " . $row['title'] . " " . $row['file_name']), ENT_QUOTES);
-
-                            $storageBadge = $hasLink
-                                ? "<span class='storage-badge storage-onedrive'><i class='bi bi-cloud-fill'></i> OneDrive Linked</span>"
-                                : "<span class='storage-badge storage-local'><i class='bi bi-hdd-fill'></i> Local Upload</span>";
-
-                            echo "<tr class='repository-row' data-office='{$office}' data-search='{$searchText}'>";
-                            echo "<td>{$office}</td>";
-                            echo "<td class='doc-title-cell'><strong>{$title}</strong><span>{$fileName}</span></td>";
-                            echo "<td>{$storageBadge}</td>";
-                            echo "<td><div class='action-inline'>";
-                            echo "<a class='btn-xs btn-view' href='{$viewUrl}' target='_blank'><i class='bi bi-eye-fill'></i> View</a>";
-                            echo "<a class='btn-xs btn-download' href='{$downloadUrl}'><i class='bi bi-download'></i> Download</a>";
-                            if($isAdmin){
-                                $linkBtnLabel = $hasLink ? "Edit Link" : "Link OneDrive";
-                                echo "<button type='button' class='btn-xs btn-link' data-open-link-modal data-doc-id='{$id}' data-doc-title='{$title}' data-doc-link='{$safeFileLink}'><i class='bi bi-cloud-plus-fill'></i> {$linkBtnLabel}</button>";
-                            }
-                            echo "</div></td>";
-                            echo "</tr>";
-                        }
-                    } else {
-                        echo "<tr><td colspan='4' class='empty-state'>No approved document files found</td></tr>";
-                    }
-                    ?>
-                </tbody>
-            </table>
+        <div class="empty-state">
+            <i class="bi bi-folder2-open" style="font-size:26px;display:block;margin-bottom:8px"></i>
+            Files <?php echo htmlspecialchars($userOffice !== '' ? $userOffice : 'your office', ENT_QUOTES); ?> submits are kept with the recommendation they belong to.
+            <div style="margin-top:6px">Open <strong>My Documents</strong> on your dashboard to see them all in one place.</div>
         </div>
     </section>
+    <?php endif; ?>
+
 </main>
 
-<?php if($isAdmin): ?>
-<div class="modal-backdrop-custom" id="linkModalBackdrop">
-    <div class="link-modal">
-        <h3><i class="bi bi-cloud-fill"></i> Link to OneDrive</h3>
-        <p class="muted-copy" id="linkModalDocTitle"></p>
-        <form method="POST" id="linkModalForm">
-            <input type="hidden" name="document_id" id="linkModalDocId" value="">
-            <label for="linkModalUrl">OneDrive share URL</label>
-            <input type="url" name="file_link" id="linkModalUrl" placeholder="https://onedrive.live.com/...">
-            <div class="link-modal-actions">
-                <button type="button" class="btn-xs btn-cancel" id="linkModalCancel">Cancel</button>
-                <button type="submit" name="set_file_link" formaction="repository.php" class="btn-xs btn-remove" id="linkModalRemove" style="display:none">Remove Link</button>
-                <button type="submit" name="set_file_link" formaction="repository.php" class="btn-xs btn-view">Save Link</button>
-            </div>
-        </form>
-    </div>
-</div>
-<?php endif; ?>
 
 <script>
-(function(){
-    var search = document.getElementById('repositorySearch');
-    var office = document.getElementById('repositoryOffice');
-    var count = document.getElementById('repositoryCount');
-    var rows = [].slice.call(document.querySelectorAll('.repository-row'));
-
-    function applyFilters(){
-        var term = (search && search.value || '').trim().toLowerCase();
-        var officeValue = office && office.value || '';
-        var shown = 0;
-        rows.forEach(function(row){
-            var visible = (!term || row.getAttribute('data-search').indexOf(term) !== -1) && (!officeValue || row.getAttribute('data-office') === officeValue);
-            row.style.display = visible ? '' : 'none';
-            if(visible){ shown++; }
-        });
-        if(count){ count.textContent = shown; }
-    }
-
-    [search, office].forEach(function(input){
-        if(input){
-            input.addEventListener('input', applyFilters);
-            input.addEventListener('change', applyFilters);
-        }
-    });
-    applyFilters();
-})();
-
 // Narrow the department folders by name.
 (function(){
     var folderSearch = document.getElementById('folderSearch');
@@ -381,44 +235,6 @@ body{margin:0;background:#f4f6f9;color:#26354b;font-family:-apple-system,BlinkMa
     });
 })();
 
-(function(){
-    var backdrop = document.getElementById('linkModalBackdrop');
-    if(!backdrop){ return; }
-    var docIdInput = document.getElementById('linkModalDocId');
-    var docTitleEl = document.getElementById('linkModalDocTitle');
-    var urlInput = document.getElementById('linkModalUrl');
-    var removeBtn = document.getElementById('linkModalRemove');
-    var cancelBtn = document.getElementById('linkModalCancel');
-
-    function openModal(trigger){
-        docIdInput.value = trigger.getAttribute('data-doc-id') || '';
-        docTitleEl.textContent = trigger.getAttribute('data-doc-title') || '';
-        var currentLink = trigger.getAttribute('data-doc-link') || '';
-        urlInput.value = currentLink;
-        removeBtn.style.display = currentLink ? '' : 'none';
-        backdrop.classList.add('is-open');
-        urlInput.focus();
-    }
-
-    function closeModal(){
-        backdrop.classList.remove('is-open');
-    }
-
-    document.addEventListener('click', function(e){
-        var trigger = e.target.closest('[data-open-link-modal]');
-        if(trigger){ openModal(trigger); }
-    });
-
-    if(cancelBtn){ cancelBtn.addEventListener('click', closeModal); }
-    backdrop.addEventListener('click', function(e){ if(e.target === backdrop){ closeModal(); } });
-    document.addEventListener('keydown', function(e){ if(e.key === 'Escape' && backdrop.classList.contains('is-open')){ closeModal(); } });
-
-    if(removeBtn){
-        removeBtn.addEventListener('click', function(){
-            urlInput.value = '';
-        });
-    }
-})();
 </script>
 </body>
 </html>

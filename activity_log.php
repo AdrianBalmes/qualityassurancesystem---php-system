@@ -166,7 +166,7 @@ function activity_query_keep(array $overrides = []){
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 <style>
 body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-serif}
-.topbar{background:linear-gradient(135deg,#316fc4,#2459a6);color:#fff;box-shadow:0 8px 20px rgba(44,93,165,.2)}
+.topbar{background:linear-gradient(135deg,#316fc4,#2459a6);color:#fff;box-shadow:0 8px 20px rgba(44,93,165,.2);position:sticky;top:0;z-index:900}
 .nav-wrap{max-width:1680px;margin:auto;min-height:74px;padding:0 clamp(14px,2vw,32px);display:flex;align-items:center;justify-content:space-between;gap:18px}
 .brand{display:flex;align-items:center;gap:14px;font-size:22px;font-weight:800}
 .brand-icon{width:64px;height:64px;display:grid;place-items:center;flex-shrink:0}

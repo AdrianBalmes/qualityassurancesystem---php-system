@@ -58,7 +58,7 @@ body{
   background:linear-gradient(100deg,var(--navy) 0%,var(--navy-deep) 100%);
   color:#fff;flex-shrink:0;
   box-shadow:0 4px 18px rgba(10,47,116,.28);
-  position:relative;z-index:20;
+  position:sticky;top:0;z-index:900;
 }
 .topbar-inner{
   max-width:1560px;margin:0 auto;

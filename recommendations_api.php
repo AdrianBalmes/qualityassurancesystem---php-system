@@ -7,14 +7,20 @@ require_once __DIR__ . "/office_directory.php";
 require_once __DIR__ . "/audit_log_helper.php";
 require_once __DIR__ . "/review_columns.php";
 require_once __DIR__ . "/in_charge.php";
+require_once __DIR__ . "/recommendation_rules.php";
+require_once __DIR__ . "/user_columns.php";
+require_once __DIR__ . "/office_statuses.php";
+require_once __DIR__ . "/notifications.php";
 header('Content-Type: application/json');
 
 $action = $_POST['action'] ?? '';
 $isAdmin = isset($_SESSION['admin_username']) && $_SESSION['admin_role'] === 'admin';
 
-// Everything here is the administrator's, except naming who is in charge --
-// an office does that on its own recommendations.
-if(!$isAdmin && !($action === 'save_in_charge' && isset($_SESSION['office_username']))){
+// Everything here is the administrator's, bar one thing an office does on its
+// own work: taking back a file it submitted itself. Offices still do not
+// assign who is in charge -- the dashboard no longer offers it and this
+// refuses it too.
+if(!$isAdmin && !($action === 'delete_document' && isset($_SESSION['office_username']))){
     http_response_code(403);
     echo json_encode(['ok' => false, 'error' => 'Unauthorized']);
     exit();
@@ -184,11 +190,136 @@ if($action === 'save_in_charge'){
 
     $names = in_charge_decode($inCharge);
     $who = !empty($names) ? implode(', ', $names) : 'nobody';
+
+    // An office added here sees the recommendation on its dashboard from now
+    // on, so it is told the same way it would be told about a new one.
+    $knownOffices = get_all_office_names($conn);
+    $newlyAssigned = array_values(array_filter($names, function($name) use ($stored, $knownOffices){
+        return in_array($name, $knownOffices, true) && !in_array($name, $stored, true);
+    }));
+    if(!empty($newlyAssigned)){
+        $recStmt = $conn->prepare("SELECT recommendation FROM audit_recommendations WHERE id = ? LIMIT 1");
+        $recStmt->bind_param("i", $id);
+        $recStmt->execute();
+        $recText = trim((string) ($recStmt->get_result()->fetch_assoc()['recommendation'] ?? ''));
+
+        notify_offices($conn, $newlyAssigned, NOTIFY_ASSIGNED, $id,
+            "Your office was put in charge of a {$row['office']} recommendation",
+            $recText !== '' ? $recText : 'The recommendation has not been written out yet.',
+            $actorOffice);
+    }
     log_audit_event($conn, $actorUsername, $actorRole, $actorOffice, 'in_charge_updated', 'recommendation', $id,
         "Set who is in charge of recommendation #{$id} ({$row['office']}) to {$who}");
 
     echo json_encode(['ok' => true, 'in_charge' => $names]);
     exit();
+}
+
+// ---- Each office's own status options ------------------------------------
+// Built-in statuses are shared; anything added here belongs to one office and
+// is invisible to every other.
+function status_manager_reply($conn, $office, $extra = []){
+    echo json_encode(array_merge([
+        'ok'       => true,
+        'office'   => $office,
+        'statuses' => office_status_choices($conn, $office),
+        'custom'   => office_custom_status_rows($conn, $office),
+    ], $extra));
+    exit();
+}
+
+function status_manager_fail($message, $code = 400){
+    http_response_code($code);
+    echo json_encode(['ok' => false, 'error' => $message]);
+    exit();
+}
+
+if($action === 'list_office_statuses' || $action === 'add_office_status'
+   || $action === 'rename_office_status' || $action === 'delete_office_status'){
+    ensure_office_statuses_table($conn);
+
+    $office = trim($_POST['office'] ?? '');
+    if($action !== 'list_office_statuses' && $action !== 'add_office_status' && (int) ($_POST['id'] ?? 0) > 0){
+        // Rename and delete are addressed by id; the office comes from the row
+        // so one office cannot touch another's statuses by naming it.
+        $idStmt = $conn->prepare("SELECT office FROM office_statuses WHERE id = ? LIMIT 1");
+        $idStmt->bind_param("i", $_POST['id']);
+        $idStmt->execute();
+        $found = $idStmt->get_result()->fetch_assoc();
+        if($found){ $office = $found['office']; }
+    }
+    if($office === '' || !in_array($office, get_all_office_names($conn), true)){
+        status_manager_fail('Office is not recognized');
+    }
+
+    if($action === 'list_office_statuses'){
+        status_manager_reply($conn, $office);
+    }
+
+    if($action === 'add_office_status'){
+        $name = trim($_POST['name'] ?? '');
+        $problem = office_status_name_problem($conn, $office, $name);
+        if($problem !== ''){ status_manager_fail($problem); }
+
+        $stmt = $conn->prepare("INSERT INTO office_statuses (office, name, created_by) VALUES (?,?,?)");
+        $stmt->bind_param("sss", $office, $name, $adminUsername);
+        $stmt->execute();
+        log_audit_event($conn, $adminUsername, 'admin', $office, 'status_created', 'office_status', $conn->insert_id,
+            "Added the status \"{$name}\" for {$office}");
+        status_manager_reply($conn, $office, ['message' => "Added {$name}."]);
+    }
+
+    $statusId = intval($_POST['id'] ?? 0);
+    $rowStmt = $conn->prepare("SELECT id, office, name FROM office_statuses WHERE id = ? LIMIT 1");
+    $rowStmt->bind_param("i", $statusId);
+    $rowStmt->execute();
+    $status = $rowStmt->get_result()->fetch_assoc();
+    if(!$status){
+        status_manager_fail('That status no longer exists', 404);
+    }
+
+    if($action === 'rename_office_status'){
+        $newName = trim($_POST['name'] ?? '');
+        if($newName === $status['name']){
+            status_manager_reply($conn, $office);
+        }
+        $problem = office_status_name_problem($conn, $office, $newName, $statusId);
+        if($problem !== ''){ status_manager_fail($problem); }
+
+        // Recommendations store the status by name, so they follow the rename.
+        $conn->begin_transaction();
+        try {
+            $up = $conn->prepare("UPDATE office_statuses SET name = ? WHERE id = ?");
+            $up->bind_param("si", $newName, $statusId);
+            $up->execute();
+            $recs = $conn->prepare("UPDATE audit_recommendations SET status = ? WHERE office = ? AND status = ?");
+            $recs->bind_param("sss", $newName, $office, $status['name']);
+            $recs->execute();
+            $moved = $conn->affected_rows;
+            $conn->commit();
+        } catch(Throwable $e){
+            $conn->rollback();
+            status_manager_fail('Could not rename that status', 500);
+        }
+        log_audit_event($conn, $adminUsername, 'admin', $office, 'status_updated', 'office_status', $statusId,
+            "Renamed the {$office} status \"{$status['name']}\" to \"{$newName}\" ({$moved} recommendation(s) updated)");
+        status_manager_reply($conn, $office, ['message' => "Renamed to {$newName}.", 'renamed_from' => $status['name']]);
+    }
+
+    // delete_office_status
+    $useStmt = $conn->prepare("SELECT COUNT(*) AS n FROM audit_recommendations WHERE office = ? AND status = ?");
+    $useStmt->bind_param("ss", $office, $status['name']);
+    $useStmt->execute();
+    $inUse = (int) $useStmt->get_result()->fetch_assoc()['n'];
+    if($inUse > 0){
+        status_manager_fail("\"{$status['name']}\" is set on {$inUse} recommendation(s). Change those to another status first.");
+    }
+    $del = $conn->prepare("DELETE FROM office_statuses WHERE id = ?");
+    $del->bind_param("i", $statusId);
+    $del->execute();
+    log_audit_event($conn, $adminUsername, 'admin', $office, 'status_deleted', 'office_status', $statusId,
+        "Deleted the {$office} status \"{$status['name']}\"");
+    status_manager_reply($conn, $office, ['message' => "Deleted {$status['name']}.", 'deleted' => $status['name']]);
 }
 
 if($action === 'save_office_recommendation'){
@@ -212,7 +343,16 @@ if($action === 'save_office_recommendation'){
         echo json_encode(['ok' => false, 'error' => 'Invalid row']);
         exit();
     }
-    if(!in_array($status, ['Pending', 'Submitted', 'Not Submitted', 'Approved', 'Rejected', 'Needs Revision', 'Completed'], true)){
+    // What counts as valid depends on the recommendation's own office: the
+    // built-in statuses plus that office's custom ones, and never another's.
+    $ownerStmt = $conn->prepare("SELECT office, status FROM audit_recommendations WHERE id = ? LIMIT 1");
+    $ownerStmt->bind_param("i", $id);
+    $ownerStmt->execute();
+    $owner = $ownerStmt->get_result()->fetch_assoc();
+    $allowedStatuses = $owner ? office_status_choices($conn, $owner['office']) : OFFICE_STATUS_BUILTIN;
+    // Keeping the status a row already has is always fine, even if it has since
+    // been removed from the list.
+    if(!in_array($status, $allowedStatuses, true) && !($owner && $owner['status'] === $status)){
         http_response_code(400);
         echo json_encode(['ok' => false, 'error' => 'Invalid status']);
         exit();
@@ -234,7 +374,7 @@ if($action === 'save_office_recommendation'){
         }
     }
 
-    $beforeStmt = $conn->prepare("SELECT office, status FROM audit_recommendations WHERE id = ? LIMIT 1");
+    $beforeStmt = $conn->prepare("SELECT office, status, recommendation, in_charge FROM audit_recommendations WHERE id = ? LIMIT 1");
     $beforeStmt->bind_param("i", $id);
     $beforeStmt->execute();
     $beforeRow = $beforeStmt->get_result()->fetch_assoc();
@@ -251,6 +391,21 @@ if($action === 'save_office_recommendation'){
     if($beforeRow){
         $statusChange = $beforeRow['status'] !== $status ? " (status: {$beforeRow['status']} \xe2\x86\x92 {$status})" : "";
         log_audit_event($conn, $adminUsername, 'admin', $beforeRow['office'], 'recommendation_updated', 'recommendation', $id, "Updated recommendation for {$beforeRow['office']}{$statusChange}");
+
+        // A row is created blank and filled in afterwards, so the moment it
+        // becomes a real recommendation is the moment it first has text --
+        // not the moment the row appeared.
+        $recipients = notification_recipients($conn, ['office' => $beforeRow['office'], 'in_charge' => $inCharge]);
+        $wasBlank = trim((string) $beforeRow['recommendation']) === '';
+
+        if($wasBlank && $recommendation !== ''){
+            notify_offices($conn, $recipients, NOTIFY_NEW, $id,
+                'New recommendation for your office', $recommendation);
+        } elseif($beforeRow['status'] !== $status){
+            notify_offices($conn, $recipients, NOTIFY_STATUS, $id,
+                "Status changed to {$status}",
+                ($recommendation !== '' ? $recommendation : 'This recommendation has no text yet.'));
+        }
     }
 
     echo json_encode(['ok' => true]);
@@ -313,11 +468,48 @@ if($action === 'delete'){
 if($action === 'delete_document'){
     $docId = intval($_POST['doc_id'] ?? 0);
     if($docId > 0){
-        $docStmt = $conn->prepare("SELECT file_name, original_name, office FROM recommendation_documents WHERE id = ? LIMIT 1");
+        $docStmt = $conn->prepare("SELECT d.file_name, d.original_name, d.office, d.recommendation_id, d.review_status,
+                                          r.status AS recommendation_status
+                                     FROM recommendation_documents d
+                                LEFT JOIN audit_recommendations r ON r.id = d.recommendation_id
+                                    WHERE d.id = ? LIMIT 1");
         $docStmt->bind_param("i", $docId);
         $docStmt->execute();
         $docRow = $docStmt->get_result()->fetch_assoc();
+
         if($docRow){
+            // An office takes back only its own file, and only while the
+            // submission is still open -- office_can_remove_document() in
+            // recommendation_rules.php is the same rule the page asks.
+            $actorUsername = $adminUsername;
+            $actorRole = 'admin';
+
+            if(!$isAdmin){
+                $login = acting_office_login();
+                $actingOffice = $login['office'] ?? '';
+
+                if(!$login || !office_can_remove_document($docRow, $docRow['recommendation_status'], $actingOffice)){
+                    http_response_code(403);
+                    echo json_encode(['ok' => false, 'error' => 'This document can no longer be removed.']);
+                    exit();
+                }
+
+                // The account may have been rejected since the page loaded.
+                $accountStmt = $conn->prepare("SELECT status, role, office FROM users WHERE id = ? LIMIT 1");
+                $accountId = (int) ($login['id'] ?? 0);
+                $accountStmt->bind_param("i", $accountId);
+                $accountStmt->execute();
+                $account = $accountStmt->get_result()->fetch_assoc();
+                if(!$account || user_login_block_reason($account) !== ''){
+                    http_response_code(403);
+                    echo json_encode(['ok' => false, 'error' => 'Your account can no longer sign in.']);
+                    exit();
+                }
+
+                $actorUsername = $login['username'] ?? '';
+                $actorRole = 'office';
+            }
+
             $deleteStmt = $conn->prepare("DELETE FROM recommendation_documents WHERE id = ?");
             $deleteStmt->bind_param("i", $docId);
             $deleteStmt->execute();
@@ -327,7 +519,8 @@ if($action === 'delete_document'){
             }
             forget_pending_onedrive_sync($conn, [$docId]);
 
-            log_audit_event($conn, $adminUsername, 'admin', $docRow['office'], 'document_deleted', 'document', $docId, "Deleted submitted document \"{$docRow['original_name']}\" ({$docRow['office']})");
+            $verb = $isAdmin ? 'Deleted' : 'Withdrew';
+            log_audit_event($conn, $actorUsername, $actorRole, $docRow['office'], 'document_deleted', 'document', $docId, "{$verb} submitted document \"{$docRow['original_name']}\" ({$docRow['office']})", (int) $docRow['recommendation_id']);
         }
     }
     echo json_encode(['ok' => true]);
@@ -353,7 +546,7 @@ if($action === 'review_recommendation'){
         exit();
     }
 
-    $beforeStmt = $conn->prepare("SELECT office, status FROM audit_recommendations WHERE id = ? LIMIT 1");
+    $beforeStmt = $conn->prepare("SELECT office, status, recommendation, in_charge FROM audit_recommendations WHERE id = ? LIMIT 1");
     $beforeStmt->bind_param("i", $id);
     $beforeStmt->execute();
     $beforeRow = $beforeStmt->get_result()->fetch_assoc();
@@ -410,6 +603,19 @@ if($action === 'review_recommendation'){
     $statusChangeNote = $beforeRow['status'] !== $newStatus ? " (status: {$beforeRow['status']} \xe2\x86\x92 {$newStatus})" : "";
     $docNote = $reviewedDoc ? " (document: {$reviewedDoc['original_name']})" : "";
     log_audit_event($conn, $adminUsername, 'admin', $beforeRow['office'], 'recommendation_reviewed', 'recommendation', $id, "Admin {$verb} recommendation for {$beforeRow['office']}{$docNote}{$statusChangeNote}");
+
+    // Feedback with no decision still changes what the office has to act on,
+    // so it is worth a notice of its own.
+    $reviewRecipients = notification_recipients($conn, $beforeRow);
+    $recSnippet = trim((string) $beforeRow['recommendation']);
+    if($beforeRow['status'] !== $newStatus){
+        notify_offices($conn, $reviewRecipients, NOTIFY_STATUS, $id,
+            "Status changed to {$newStatus}",
+            $reviewRemarks !== '' ? $reviewRemarks : $recSnippet);
+    } elseif($reviewRemarks !== ''){
+        notify_offices($conn, $reviewRecipients, NOTIFY_FEEDBACK, $id,
+            'New review feedback', $reviewRemarks);
+    }
 
     echo json_encode(['ok' => true, 'status' => $newStatus, 'review_remarks' => $reviewRemarks, 'doc_id' => $reviewedDoc ? (int) $reviewedDoc['id'] : null, 'doc_review_status' => $reviewedDoc ? $docReviewStatus : null]);
     exit();

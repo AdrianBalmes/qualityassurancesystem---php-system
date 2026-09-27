@@ -4,6 +4,7 @@ require_once __DIR__ . "/database.php";
 require_once __DIR__ . "/audit_classification.php";
 require_once __DIR__ . "/audit_areas.php";
 require_once __DIR__ . "/recommendation_view_rows.php";
+require_once __DIR__ . "/office_statuses.php";
 require_once __DIR__ . "/review_columns.php";
 header('Content-Type: application/json');
 
@@ -37,6 +38,11 @@ if($selectedArea !== '' && $selectedArea !== AUDIT_AREA_UNASSIGNED
 }
 
 $filters = recommendation_filters_from_request($_GET);
+// The Status filter offers what this office can actually use. "All Offices"
+// has no single office, so it offers the built-ins plus every custom one.
+$statusOptions = $selectedOffice !== ''
+    ? office_status_choices($conn, $selectedOffice)
+    : office_status_choices_for_audit($conn, $selectedAudit);
 $filtersActive = recommendation_filters_active($filters);
 
 // Three steps for a programmed office -- programmes, then that programme's
@@ -54,6 +60,7 @@ if(!$filtersActive && office_has_programs($selectedOffice) && $selectedProgram =
         'title' => $selectedOffice . ' — Programs',
         'html' => render_program_cards($conn, $selectedOffice, $selectedAudit),
         'count' => 0,
+        'statuses' => $statusOptions,
     ]);
     exit();
 }
@@ -70,6 +77,7 @@ if(!$filtersActive && office_has_areas($selectedOffice) && $selectedArea === '')
         'title' => ($selectedProgram !== '' ? $selectedProgram : $selectedOffice) . ' — Areas',
         'html' => render_area_cards($conn, $selectedOffice, $selectedAudit, $selectedProgram),
         'count' => 0,
+        'statuses' => $statusOptions,
     ]);
     exit();
 }
@@ -77,7 +85,7 @@ if(!$filtersActive && office_has_areas($selectedOffice) && $selectedArea === '')
 $recommendations = fetch_office_recommendations($conn, $selectedOffice, $selectedAudit, $selectedArea, $selectedProgram, $filters);
 $recIds = array_map(function($row){ return (int) $row['id']; }, $recommendations);
 $docsByRecommendation = fetch_recommendation_documents_map($conn, $recIds);
-$rendered = render_office_recommendation_rows($recommendations, $selectedOffice, $selectedAudit, $docsByRecommendation, $filtersActive);
+$rendered = render_office_recommendation_rows($recommendations, $selectedOffice, $selectedAudit, $docsByRecommendation, $filtersActive, office_custom_status_map($conn));
 
 echo json_encode([
     'ok' => true,
@@ -92,4 +100,5 @@ echo json_encode([
         : office_recommendations_title($selectedOffice),
     'html' => $rendered['html'],
     'count' => $rendered['count'],
+    'statuses' => $statusOptions,
 ]);

@@ -93,6 +93,12 @@ if($selectedArea !== '' && $selectedArea !== AUDIT_AREA_UNASSIGNED
 $gridFilters = recommendation_filters_from_request($_GET);
 $filtersActive = recommendation_filters_active($gridFilters);
 $filterOptions = recommendation_filter_options($conn, $selectedAudit);
+// The Status filter and each row's status menu offer the built-in statuses plus
+// the ones the office being viewed has added for itself.
+$statusFilterChoices = $selectedOffice !== ''
+    ? office_status_choices($conn, $selectedOffice)
+    : office_status_choices_for_audit($conn, $selectedAudit);
+$customStatusMap = office_custom_status_map($conn);
 
 $showingPrograms = !$filtersActive && office_has_programs($selectedOffice) && $selectedProgram === '';
 $showingAreas = !$filtersActive && !$showingPrograms && office_has_areas($selectedOffice) && $selectedArea === '';
@@ -170,10 +176,24 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
 .area-purple .area-total{background:#efe9fb;color:#5b3fa0}
 .area-blue{border-left:3px solid #316fc4}
 @media(prefers-reduced-motion:reduce){.prog-card{transition:none}.prog-card:hover{transform:none}}
+.status-builtin-list{display:flex;flex-wrap:wrap;gap:6px}
+.status-builtin-list span{background:#eef1f6;color:#4c5a72;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:800}
+.status-custom-list{display:grid;gap:8px}
+.status-custom-row{display:flex;gap:8px;align-items:center}
+.status-custom-row input{flex:1;min-width:0;border:1px solid #cfd9e8;border-radius:5px;padding:7px 10px;font-size:13.5px}
+.status-custom-row .status-use{font-size:11.5px;font-weight:800;color:#66758d;white-space:nowrap}
+.status-mini{border:0;border-radius:5px;font-weight:800;font-size:12px;padding:7px 10px;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+.status-mini.save{background:#316fc4;color:#fff}
+.status-mini.del{background:#ffe1dc;color:#a33831}
+.status-mini[disabled]{background:#f1f3f7;color:#b3bccb;cursor:not-allowed}
+.status-add-form{display:flex;gap:8px}
+.status-add-form input{flex:1;min-width:0;border:1px solid #cfd9e8;border-radius:6px;padding:9px 11px;font-size:13.5px}
+.status-msg{min-height:18px;font-size:12.5px;font-weight:700}
+.status-msg.error{color:#a33831}.status-msg.ok{color:#277548}
 .back-areas-btn{min-height:32px;border:1px solid #c8d4e7;border-radius:5px;background:#fff;color:#2e67b8;font-weight:800;font-size:12.5px;padding:6px 12px;display:inline-flex;align-items:center;gap:6px;cursor:pointer}
 .back-areas-btn:hover{background:#eef4ff}
 @media(prefers-reduced-motion:reduce){.area-card{transition:none}.area-card:hover{transform:none}}
-.document-panel{margin-top:12px}img,canvas,svg{max-width:100%}.dashboard,.page,.nav-wrap{width:100%}.add-row-btn{min-height:38px;border:0;border-radius:5px;background:#316fc4;color:#fff;text-decoration:none;font-weight:800;display:inline-flex;align-items:center;gap:8px;padding:8px 16px}.grid-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:14px}.grid-wrap{overflow-x:auto;border:1px solid #dbe3ef;border-radius:6px;-webkit-overflow-scrolling:touch}.grid-table{width:100%;border-collapse:collapse;min-width:1100px}.grid-table th{background:#f1f5fb;color:#56637a;font-size:13px;text-align:left;padding:10px;border-bottom:2px solid #dbe3ef;position:sticky;top:0}.grid-table td{border-bottom:1px solid #e7edf6;border-right:1px solid #eef2f8;padding:0;vertical-align:top}.cell-text{min-width:160px;padding:8px 10px;font-size:13px;font-weight:600;color:#344156;outline:none;min-height:38px;word-break:break-word;overflow-wrap:anywhere}.cell-text.grid-rec-cell{min-width:320px}.cell-text:focus{background:#eef4ff;box-shadow:inset 0 0 0 2px #316fc4}.cell-select{width:100%;height:100%;border:0;background:transparent;padding:8px 10px;font-size:13px;font-weight:700}.cell-select:focus{background:#eef4ff;outline:none}.cell-year{width:100%;border:0;background:transparent;padding:8px 10px;font-size:13px;font-weight:700}.cell-year:focus{background:#eef4ff;outline:none}.cell-select:disabled,.cell-year:disabled{opacity:1;color:#344156;background:transparent;border:0;-webkit-text-fill-color:#344156}tr[data-mode="view"] .incharge-add-row,tr[data-mode="view"] .incharge-remove{display:none}tr[data-mode="view"] .cell-year::placeholder{color:transparent}.remarks-grouped{display:flex;flex-direction:column;gap:8px;padding:8px 10px}.remarks-office-block{border-left:3px solid #dbe3ef;padding-left:8px}.remarks-office-label{display:block;font-size:11px;font-weight:800;text-transform:uppercase;color:#66758d;margin-bottom:2px}.remarks-office-text{font-size:13px;font-weight:600;color:#344156;word-break:break-word}.cell-readonly{padding:8px 10px;font-size:13px;font-weight:700;color:#344156}.row-actions{display:flex;gap:6px;padding:4px;align-items:center}.row-edit-btn,.row-save-btn,.row-delete,.row-review-btn{border:0;border-radius:5px;font-weight:800;font-size:12px;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}.row-edit-btn{background:#eef4ff;color:#2e67b8;padding:6px 10px}.row-save-btn{background:#277548;color:#fff;padding:6px 10px;display:none}.row-review-btn{background:#efe9fb;color:#5b3fa0;padding:6px 10px}.row-review-btn:hover{background:#e2d8f7}.row-delete{background:#ffe1dc;color:#a33831;width:32px;height:32px;justify-content:center}.status-chip{display:inline-flex;padding:4px 9px;border-radius:999px;font-size:11.5px;font-weight:800}.chip-blue{background:#d8e2f5;color:#2e5fa3}.chip-green{background:#cdeedc;color:#277548}.chip-yellow{background:#fff0ba;color:#806119}.chip-red{background:#ffd6d0;color:#a33831}.chip-steel{background:#e4e9f1;color:#4c5a72}.chip-orange{background:#ffe3c2;color:#95530a}.status-select{height:auto;width:calc(100% - 16px);margin:7px 8px;padding:6px 9px;border-radius:999px;font-size:12px;font-weight:800;border:1px solid rgba(15,26,42,.08)}.status-select option{background:#fff;color:#344156}.status-select.chip-steel,.status-select.chip-steel:disabled{background:#e4e9f1;color:#4c5a72;-webkit-text-fill-color:#4c5a72}.status-select.chip-red,.status-select.chip-red:disabled{background:#ffd6d0;color:#a33831;-webkit-text-fill-color:#a33831}.status-select.chip-yellow,.status-select.chip-yellow:disabled{background:#fff0ba;color:#806119;-webkit-text-fill-color:#806119}.status-select.chip-blue,.status-select.chip-blue:disabled{background:#d8e2f5;color:#2e5fa3;-webkit-text-fill-color:#2e5fa3}.status-select.chip-orange,.status-select.chip-orange:disabled{background:#ffe3c2;color:#95530a;-webkit-text-fill-color:#95530a}.status-select.chip-green,.status-select.chip-green:disabled{background:#cdeedc;color:#277548;-webkit-text-fill-color:#277548}tr[data-mode="edit"] .status-select{border-color:#316fc4}.doc-pill-list{display:flex;flex-direction:column;gap:8px}.doc-sidebar-item{display:flex;align-items:center;gap:8px}.doc-pill{font-size:13px;font-weight:700;color:#2e67b8;text-decoration:none;word-break:break-word;display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #dbe3ef;border-radius:6px;flex:1;min-width:0}.doc-pill:hover{background:#f7fbff}.doc-delete-btn{border:0;border-radius:6px;background:#ffe1dc;color:#a33831;width:32px;height:32px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}.doc-delete-btn:hover{background:#ffcac1}.doc-trigger-btn{margin:6px 10px;border:1px solid #c8d4e7;border-radius:5px;background:#eef4ff;color:#2e67b8;font-weight:800;font-size:12.5px;padding:6px 10px;display:inline-flex;align-items:center;gap:7px;cursor:pointer}.doc-trigger-btn:hover{background:#dfeaff}.doc-count-badge{background:#316fc4;color:#fff;border-radius:999px;min-width:18px;height:18px;padding:0 5px;font-size:11px;display:inline-flex;align-items:center;justify-content:center}.doc-sidebar-backdrop{position:fixed;inset:0;background:rgba(15,26,42,.4);opacity:0;pointer-events:none;transition:opacity .2s ease;z-index:1000}.doc-sidebar-backdrop.is-open{opacity:1;pointer-events:auto}.doc-sidebar{position:fixed;top:0;right:0;height:100vh;width:min(360px,92vw);background:#fff;box-shadow:-8px 0 24px rgba(15,26,42,.18);transform:translateX(100%);transition:transform .25s ease;z-index:1001;display:flex;flex-direction:column}.doc-sidebar.is-open{transform:translateX(0)}.doc-sidebar-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid #e6edf7}.doc-sidebar-head h3{margin:0;font-size:16px;font-weight:800;color:#26354b}.doc-sidebar-close{border:0;background:#eef4ff;color:#2e67b8;width:30px;height:30px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}.doc-sidebar-close:hover{background:#dfeaff}.doc-sidebar-rec{padding:12px 18px;border-bottom:1px solid #e6edf7;font-size:13px;font-weight:700;color:#344156;background:#f8fbff}.doc-sidebar-body{padding:14px 18px;overflow-y:auto;flex:1}.doc-office-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;border-bottom:1px solid #e6edf7;padding-bottom:10px}.doc-office-tab{border:1px solid #dbe3ef;background:#fff;color:#56637a;font-weight:800;font-size:12px;padding:6px 12px;border-radius:999px;cursor:pointer}.doc-office-tab:hover{background:#f7fbff}.doc-office-tab.active{background:#316fc4;border-color:#316fc4;color:#fff}.review-modal-backdrop{position:fixed;inset:0;background:rgba(15,26,42,.45);opacity:0;pointer-events:none;transition:opacity .2s ease;z-index:1100;display:flex;align-items:center;justify-content:center;padding:20px}.review-modal-backdrop.is-open{opacity:1;pointer-events:auto}.review-modal{background:#fff;border-radius:10px;box-shadow:0 20px 50px rgba(15,26,42,.3);width:min(560px,100%);max-height:90vh;display:flex;flex-direction:column;transform:translateY(16px);transition:transform .2s ease}.review-modal-backdrop.is-open .review-modal{transform:translateY(0)}.review-modal-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #e6edf7}.review-modal-head h3{margin:0;font-size:16px;font-weight:800;color:#26354b;display:flex;align-items:center;gap:8px}.review-modal-body{padding:18px 20px;overflow-y:auto;display:grid;gap:14px}.review-modal-footer{padding:14px 20px;border-top:1px solid #e6edf7;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.review-field-label{font-size:11.5px;font-weight:800;color:#66758d;text-transform:uppercase;margin-bottom:4px;display:block}.review-readonly-block{background:#f8fbff;border:1px solid #e6edf7;border-radius:6px;padding:10px 12px;font-size:13.5px;color:#344156;white-space:pre-wrap;word-break:break-word}.review-textarea{width:100%;min-height:90px;border:1px solid #cfd9e8;border-radius:6px;padding:10px;font-size:13.5px;font-family:inherit;resize:vertical}.review-btn{border:0;border-radius:5px;font-weight:800;font-size:12.5px;padding:9px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}.review-btn-approve{background:#2fa66a;color:#fff}.review-btn-reject{background:#c23b36;color:#fff}.review-btn-revision{background:#e0a51d;color:#fff}.review-btn-completed{background:#316fc4;color:#fff}.review-btn-remarks{background:#eef4ff;color:#2e67b8}.review-btn-cancel{background:#f1f3f7;color:#56637a}.review-btn:disabled{opacity:.45;cursor:not-allowed}.review-doc-option{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid #dbe3ef;border-radius:6px;cursor:pointer;margin:0}.review-doc-option.is-selected{border-color:#316fc4;background:#f3f8ff}.review-doc-option .doc-pill{border:0;padding:2px 0;flex:1;min-width:0}.review-doc-meta{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;color:#66758d;flex-shrink:0}tr[data-mode="edit"] .row-edit-btn{display:none}tr[data-mode="edit"] .row-save-btn{display:inline-flex}tr[data-mode="edit"] .cell-text{background:#eef4ff;box-shadow:inset 0 0 0 2px #316fc4}@media(max-width:1060px){.nav-wrap{flex-direction:column;align-items:flex-start;padding:14px 18px}}@media(max-width:760px){.brand{font-size:17px}.chart-box{height:230px}.office-tabs{grid-template-columns:32px minmax(0,1fr) 32px}.office-tile{flex-basis:94px}.audit-head{align-items:flex-start}.audit-switcher{width:100%}.audit-switch{flex:1 1 auto;justify-content:center;text-align:center}}@media(max-width:480px){.dashboard{padding:0 10px;margin:16px auto 28px}.panel-pad{padding:12px}.panel-title{font-size:15px}.page-title{font-size:20px}.stat-box{font-size:12px;padding:8px 10px}.stat-box strong{font-size:17px}.brand{font-size:15px;gap:8px}.brand-icon{width:48px;height:48px}.nav-links{gap:12px;font-size:13px}.office-tile{flex-basis:80px;min-height:72px}.office-icon{width:56px;height:44px;font-size:22px}.section-heading{font-size:16px}}
+.document-panel{margin-top:12px}img,canvas,svg{max-width:100%}.dashboard,.page,.nav-wrap{width:100%}.add-row-btn{min-height:38px;border:0;border-radius:5px;background:#316fc4;color:#fff;text-decoration:none;font-weight:800;display:inline-flex;align-items:center;gap:8px;padding:8px 16px}.grid-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:14px}.grid-wrap{overflow-x:auto;border:1px solid #dbe3ef;border-radius:6px;-webkit-overflow-scrolling:touch}.grid-table{width:100%;border-collapse:collapse;min-width:1100px}.grid-table th{background:#f1f5fb;color:#56637a;font-size:13px;text-align:left;padding:10px;border-bottom:2px solid #dbe3ef;position:sticky;top:0}.grid-table td{border-bottom:1px solid #e7edf6;border-right:1px solid #eef2f8;padding:0;vertical-align:top}.cell-text{min-width:160px;padding:8px 10px;font-size:13px;font-weight:600;color:#344156;outline:none;min-height:38px;word-break:break-word;overflow-wrap:anywhere}.cell-text.grid-rec-cell{min-width:320px}.cell-text:focus{background:#eef4ff;box-shadow:inset 0 0 0 2px #316fc4}.cell-select{width:100%;height:100%;border:0;background:transparent;padding:8px 10px;font-size:13px;font-weight:700}.cell-select:focus{background:#eef4ff;outline:none}.cell-year{width:100%;border:0;background:transparent;padding:8px 10px;font-size:13px;font-weight:700}.cell-year:focus{background:#eef4ff;outline:none}.cell-select:disabled,.cell-year:disabled{opacity:1;color:#344156;background:transparent;border:0;-webkit-text-fill-color:#344156}tr[data-mode="view"] .incharge-add-row,tr[data-mode="view"] .incharge-remove{display:none}tr[data-mode="view"] .cell-year::placeholder{color:transparent}.remarks-grouped{display:flex;flex-direction:column;gap:8px;padding:8px 10px}.remarks-office-block{border-left:3px solid #dbe3ef;padding-left:8px}.remarks-office-label{display:block;font-size:11px;font-weight:800;text-transform:uppercase;color:#66758d;margin-bottom:2px}.remarks-office-text{font-size:13px;font-weight:600;color:#344156;word-break:break-word}.cell-readonly{padding:8px 10px;font-size:13px;font-weight:700;color:#344156}.row-actions{display:flex;gap:6px;padding:4px;align-items:center}.row-edit-btn,.row-save-btn,.row-delete,.row-review-btn{border:0;border-radius:5px;font-weight:800;font-size:12px;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}.row-edit-btn{background:#eef4ff;color:#2e67b8;padding:6px 10px}.row-save-btn{background:#277548;color:#fff;padding:6px 10px;display:none}.row-review-btn{background:#efe9fb;color:#5b3fa0;padding:6px 10px}.row-review-btn:hover{background:#e2d8f7}.row-delete{background:#ffe1dc;color:#a33831;width:32px;height:32px;justify-content:center}.row-history-btn{border:0;border-radius:5px;background:#eef4ff;color:#2e67b8;width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;cursor:pointer}.row-history-btn:hover{background:#dfeaff}.hist-meta{background:#f8fbff;border:1px solid #e6edf7;border-radius:6px;padding:10px 12px}.hist-meta-office{font-size:11.5px;font-weight:800;text-transform:uppercase;color:#66758d;margin-bottom:2px}.hist-meta-text{font-size:13.5px;color:#344156;word-break:break-word}.hist-list{display:flex;flex-direction:column}.hist-item{display:flex;gap:12px;padding:12px 2px;border-bottom:1px solid #f0f4fa}.hist-item:last-child{border-bottom:0}.hist-icon{width:30px;height:30px;flex-shrink:0;border-radius:8px;display:grid;place-items:center;font-size:14px}.hist-blue{background:#d8e2f5;color:#2e5fa3}.hist-green{background:#cdeedc;color:#277548}.hist-orange{background:#ffe3c2;color:#95530a}.hist-purple{background:#efe9fb;color:#5b3fa0}.hist-red{background:#ffd6d0;color:#a33831}.hist-steel{background:#e4e9f1;color:#4c5a72}.hist-body{display:flex;flex-direction:column;gap:3px;min-width:0}.hist-head{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}.hist-label{font-size:13px;font-weight:800;color:#26354b}.hist-when{font-size:11.5px;font-weight:700;color:#8492a8}.hist-desc{font-size:13px;color:#44536b;word-break:break-word}.hist-actor{font-size:11.5px;color:#66758d;font-weight:700}.hist-empty{padding:26px;text-align:center;color:#8492a8;font-weight:700}.status-chip{display:inline-flex;padding:4px 9px;border-radius:999px;font-size:11.5px;font-weight:800}.chip-blue{background:#d8e2f5;color:#2e5fa3}.chip-green{background:#cdeedc;color:#277548}.chip-yellow{background:#fff0ba;color:#806119}.chip-red{background:#ffd6d0;color:#a33831}.chip-steel{background:#e4e9f1;color:#4c5a72}.chip-orange{background:#ffe3c2;color:#95530a}.status-select{height:auto;width:calc(100% - 16px);margin:7px 8px;padding:6px 9px;border-radius:999px;font-size:12px;font-weight:800;border:1px solid rgba(15,26,42,.08)}.status-select option{background:#fff;color:#344156}.status-select.chip-steel,.status-select.chip-steel:disabled{background:#e4e9f1;color:#4c5a72;-webkit-text-fill-color:#4c5a72}.status-select.chip-red,.status-select.chip-red:disabled{background:#ffd6d0;color:#a33831;-webkit-text-fill-color:#a33831}.status-select.chip-yellow,.status-select.chip-yellow:disabled{background:#fff0ba;color:#806119;-webkit-text-fill-color:#806119}.status-select.chip-blue,.status-select.chip-blue:disabled{background:#d8e2f5;color:#2e5fa3;-webkit-text-fill-color:#2e5fa3}.status-select.chip-orange,.status-select.chip-orange:disabled{background:#ffe3c2;color:#95530a;-webkit-text-fill-color:#95530a}.status-select.chip-green,.status-select.chip-green:disabled{background:#cdeedc;color:#277548;-webkit-text-fill-color:#277548}tr[data-mode="edit"] .status-select{border-color:#316fc4}.doc-pill-list{display:flex;flex-direction:column;gap:8px}.doc-sidebar-item{display:flex;align-items:center;gap:8px}.doc-pill{font-size:13px;font-weight:700;color:#2e67b8;text-decoration:none;word-break:break-word;display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #dbe3ef;border-radius:6px;flex:1;min-width:0}.doc-pill:hover{background:#f7fbff}.doc-delete-btn{border:0;border-radius:6px;background:#ffe1dc;color:#a33831;width:32px;height:32px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}.doc-delete-btn:hover{background:#ffcac1}.doc-trigger-btn{margin:6px 10px;border:1px solid #c8d4e7;border-radius:5px;background:#eef4ff;color:#2e67b8;font-weight:800;font-size:12.5px;padding:6px 10px;display:inline-flex;align-items:center;gap:7px;cursor:pointer}.doc-trigger-btn:hover{background:#dfeaff}.doc-count-badge{background:#316fc4;color:#fff;border-radius:999px;min-width:18px;height:18px;padding:0 5px;font-size:11px;display:inline-flex;align-items:center;justify-content:center}.doc-sidebar-backdrop{position:fixed;inset:0;background:rgba(15,26,42,.4);opacity:0;pointer-events:none;transition:opacity .2s ease;z-index:1000}.doc-sidebar-backdrop.is-open{opacity:1;pointer-events:auto}.doc-sidebar{position:fixed;top:0;right:0;height:100vh;width:min(360px,92vw);background:#fff;box-shadow:-8px 0 24px rgba(15,26,42,.18);transform:translateX(100%);transition:transform .25s ease;z-index:1001;display:flex;flex-direction:column}.doc-sidebar.is-open{transform:translateX(0)}.doc-sidebar-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid #e6edf7}.doc-sidebar-head h3{margin:0;font-size:16px;font-weight:800;color:#26354b}.doc-sidebar-close{border:0;background:#eef4ff;color:#2e67b8;width:30px;height:30px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}.doc-sidebar-close:hover{background:#dfeaff}.doc-sidebar-rec{padding:12px 18px;border-bottom:1px solid #e6edf7;font-size:13px;font-weight:700;color:#344156;background:#f8fbff}.doc-sidebar-body{padding:14px 18px;overflow-y:auto;flex:1}.doc-office-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;border-bottom:1px solid #e6edf7;padding-bottom:10px}.doc-office-tab{border:1px solid #dbe3ef;background:#fff;color:#56637a;font-weight:800;font-size:12px;padding:6px 12px;border-radius:999px;cursor:pointer}.doc-office-tab:hover{background:#f7fbff}.doc-office-tab.active{background:#316fc4;border-color:#316fc4;color:#fff}.review-modal-backdrop{position:fixed;inset:0;background:rgba(15,26,42,.45);opacity:0;pointer-events:none;transition:opacity .2s ease;z-index:1100;display:flex;align-items:center;justify-content:center;padding:20px}.review-modal-backdrop.is-open{opacity:1;pointer-events:auto}.review-modal{background:#fff;border-radius:10px;box-shadow:0 20px 50px rgba(15,26,42,.3);width:min(560px,100%);max-height:90vh;display:flex;flex-direction:column;transform:translateY(16px);transition:transform .2s ease}.review-modal-backdrop.is-open .review-modal{transform:translateY(0)}.review-modal-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #e6edf7}.review-modal-head h3{margin:0;font-size:16px;font-weight:800;color:#26354b;display:flex;align-items:center;gap:8px}.review-modal-body{padding:18px 20px;overflow-y:auto;display:grid;gap:14px}.review-modal-footer{padding:14px 20px;border-top:1px solid #e6edf7;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.review-field-label{font-size:11.5px;font-weight:800;color:#66758d;text-transform:uppercase;margin-bottom:4px;display:block}.review-readonly-block{background:#f8fbff;border:1px solid #e6edf7;border-radius:6px;padding:10px 12px;font-size:13.5px;color:#344156;white-space:pre-wrap;word-break:break-word}.review-textarea{width:100%;min-height:90px;border:1px solid #cfd9e8;border-radius:6px;padding:10px;font-size:13.5px;font-family:inherit;resize:vertical}.review-btn{border:0;border-radius:5px;font-weight:800;font-size:12.5px;padding:9px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}.review-btn-approve{background:#2fa66a;color:#fff}.review-btn-reject{background:#c23b36;color:#fff}.review-btn-revision{background:#e0a51d;color:#fff}.review-btn-completed{background:#316fc4;color:#fff}.review-btn-remarks{background:#eef4ff;color:#2e67b8}.review-btn-cancel{background:#f1f3f7;color:#56637a}.review-btn:disabled{opacity:.45;cursor:not-allowed}.review-doc-option{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid #dbe3ef;border-radius:6px;cursor:pointer;margin:0}.review-doc-option.is-selected{border-color:#316fc4;background:#f3f8ff}.review-doc-option .doc-pill{border:0;padding:2px 0;flex:1;min-width:0}.review-doc-meta{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;color:#66758d;flex-shrink:0}tr[data-mode="edit"] .row-edit-btn{display:none}tr[data-mode="edit"] .row-save-btn{display:inline-flex}tr[data-mode="edit"] .cell-text{background:#eef4ff;box-shadow:inset 0 0 0 2px #316fc4}@media(max-width:1060px){.nav-wrap{flex-direction:column;align-items:flex-start;padding:14px 18px}}@media(max-width:760px){.brand{font-size:17px}.chart-box{height:230px}.office-tabs{grid-template-columns:32px minmax(0,1fr) 32px}.office-tile{flex-basis:94px}.audit-head{align-items:flex-start}.audit-switcher{width:100%}.audit-switch{flex:1 1 auto;justify-content:center;text-align:center}}@media(max-width:480px){.dashboard{padding:0 10px;margin:16px auto 28px}.panel-pad{padding:12px}.panel-title{font-size:15px}.page-title{font-size:20px}.stat-box{font-size:12px;padding:8px 10px}.stat-box strong{font-size:17px}.brand{font-size:15px;gap:8px}.brand-icon{width:48px;height:48px}.nav-links{gap:12px;font-size:13px}.office-tile{flex-basis:80px;min-height:72px}.office-icon{width:56px;height:44px;font-size:22px}.section-heading{font-size:16px}}
 </style>
 </head>
 <body>
@@ -243,7 +263,7 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
         </select>
         <select id="filterStatus" class="grid-filter-select" aria-label="Filter by status of submission">
             <option value="">Any status</option>
-            <?php foreach(['Pending', 'Submitted', 'Not Submitted', 'Approved', 'Needs Revision', 'Rejected', 'Completed'] as $statusChoice): ?>
+            <?php foreach($statusFilterChoices as $statusChoice): ?>
             <option value="<?php echo htmlspecialchars($statusChoice, ENT_QUOTES); ?>"<?php echo $gridFilters['status'] === $statusChoice ? ' selected' : ''; ?>><?php echo htmlspecialchars($statusChoice, ENT_QUOTES); ?></option>
             <?php endforeach; ?>
         </select>
@@ -257,6 +277,7 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
             <?php endforeach; ?>
         </select>
         <button type="button" id="filterClear" class="grid-filter-clear"><i class="bi bi-x-lg"></i> Clear</button>
+        <button type="button" id="manageStatusesBtn" class="grid-filter-clear" <?php echo $selectedOffice === '' ? 'style="display:none"' : ''; ?>><i class="bi bi-sliders"></i> Manage statuses</button>
         <span class="grid-filter-count" id="gridCount"><?php
             if($filtersActive){
                 $matchCount = count($auditRecommendations);
@@ -277,7 +298,7 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
                     <th>Remarks</th>
                     <th style="width:150px">Submitted Documents</th>
                     <th style="width:120px">Year</th>
-                    <th style="width:190px">Actions</th>
+                    <th style="width:230px">Actions</th>
                 </tr>
             </thead>
             <tbody id="auditRecTbody">
@@ -289,7 +310,7 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
                 } else {
                     $auditRecIds = array_map(function($row){ return (int) $row['id']; }, $auditRecommendations);
                     $auditDocsByRecommendation = fetch_recommendation_documents_map($conn, $auditRecIds);
-                    $auditRecRendered = render_office_recommendation_rows($auditRecommendations, $selectedOffice, $selectedAudit, $auditDocsByRecommendation, $filtersActive);
+                    $auditRecRendered = render_office_recommendation_rows($auditRecommendations, $selectedOffice, $selectedAudit, $auditDocsByRecommendation, $filtersActive, $customStatusMap);
                     echo $auditRecRendered['html'];
                 }
                 ?>
@@ -307,6 +328,34 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
     <div class="doc-sidebar-rec" id="docSidebarRecText"></div>
     <div class="doc-sidebar-body" id="docSidebarBody"></div>
 </aside>
+<div class="review-modal-backdrop" id="statusModalBackdrop">
+    <div class="review-modal" role="dialog" aria-modal="true" aria-labelledby="statusModalTitle">
+        <div class="review-modal-head">
+            <h3 id="statusModalTitle"><i class="bi bi-sliders"></i> Statuses</h3>
+            <button type="button" class="doc-sidebar-close" id="statusModalClose" aria-label="Close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="review-modal-body">
+            <div class="muted-copy" id="statusModalNote"></div>
+            <div>
+                <span class="review-field-label">Available to every office</span>
+                <div class="status-builtin-list" id="statusBuiltinList"></div>
+            </div>
+            <div>
+                <span class="review-field-label">Added for this office</span>
+                <div id="statusCustomList" class="status-custom-list"></div>
+            </div>
+            <form id="statusAddForm" class="status-add-form" autocomplete="off">
+                <input type="text" id="statusNewName" maxlength="40" placeholder="New status, e.g. Awaiting Board Approval" aria-label="New status name">
+                <button type="submit" class="review-btn review-btn-completed"><i class="bi bi-plus-lg"></i> Add</button>
+            </form>
+            <div class="status-msg" id="statusMsg" role="status" aria-live="polite"></div>
+        </div>
+        <div class="review-modal-footer">
+            <button type="button" class="review-btn review-btn-cancel" id="statusModalDone">Done</button>
+        </div>
+    </div>
+</div>
+
 <div class="review-modal-backdrop" id="reviewModalBackdrop">
     <div class="review-modal" role="dialog" aria-modal="true" aria-labelledby="reviewModalTitle">
         <div class="review-modal-head">
@@ -346,6 +395,21 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
             <button type="button" class="review-btn review-btn-reject" data-review-action="reject"><i class="bi bi-x-circle"></i> Reject</button>
             <button type="button" class="review-btn review-btn-approve" data-review-action="approve"><i class="bi bi-check-circle"></i> Approve</button>
             <button type="button" class="review-btn review-btn-completed" data-review-action="completed"><i class="bi bi-flag-fill"></i> Mark Completed</button>
+        </div>
+    </div>
+</div>
+<div class="review-modal-backdrop" id="historyModalBackdrop">
+    <div class="review-modal" role="dialog" aria-modal="true" aria-labelledby="historyModalTitle">
+        <div class="review-modal-head">
+            <h3 id="historyModalTitle"><i class="bi bi-clock-history"></i> Recommendation Activity</h3>
+            <button type="button" class="doc-sidebar-close" id="historyModalClose" aria-label="Close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="review-modal-body">
+            <div class="hist-meta" id="historyMeta"></div>
+            <div class="hist-list" id="historyList"></div>
+        </div>
+        <div class="review-modal-footer">
+            <button type="button" class="review-btn review-btn-cancel" id="historyModalDone">Close</button>
         </div>
     </div>
 </div>
@@ -742,6 +806,8 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
 (function(){
     var selectedAudit = <?php echo json_encode($selectedAudit); ?>;
     var currentOffice = <?php echo json_encode($selectedOffice); ?>;
+    var currentStatuses = <?php echo json_encode($statusFilterChoices); ?>;
+    var BUILTIN_STATUSES = <?php echo json_encode(OFFICE_STATUS_BUILTIN); ?>;
     var currentArea = <?php echo json_encode($selectedArea); ?>;
     var currentProgram = <?php echo json_encode($selectedProgram); ?>;
     var officeTabs = document.getElementById('officeTabs');
@@ -756,6 +822,7 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
     var filterYear = document.getElementById('filterYear');
     var filterClear = document.getElementById('filterClear');
     var gridCount = document.getElementById('gridCount');
+    var manageStatusesBtn = document.getElementById('manageStatusesBtn');
 
     function currentFilters(){
         return {
@@ -783,7 +850,7 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
             + "<th>Recommendation</th><th style='width:190px'>In Charge</th>"
             + "<th style='width:140px'>Status of Submission</th><th>Remarks</th>"
             + "<th style='width:150px'>Submitted Documents</th><th style='width:120px'>Year</th>"
-            + "<th style='width:190px'>Actions</th>";
+            + "<th style='width:230px'>Actions</th>";
     }
 
     // Office names are pasted into HTML below; an apostrophe ("Dean's Office")
@@ -800,6 +867,7 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
             "<button type='button' class='row-edit-btn' title='Edit row'><i class='bi bi-pencil'></i> Edit</button>" +
             "<button type='button' class='row-save-btn' title='Save row'><i class='bi bi-check2'></i> Save</button>" +
             "<button type='button' class='row-review-btn' title='Review submission' data-review-trigger data-rec-id='" + recId + "' data-office='" + office + "' data-rec-text='' data-status='Pending' data-remarks='' data-review-remarks='' data-docs='[]'><i class='bi bi-clipboard-check'></i> Review</button>" +
+            "<button type='button' class='row-history-btn' title='Activity for this recommendation' data-history-trigger data-rec-id='" + recId + "'><i class='bi bi-clock-history'></i></button>" +
             "<button type='button' class='row-delete' title='Delete row'><i class='bi bi-trash3'></i></button>" +
         "</div>";
     }
@@ -819,13 +887,9 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
         tr.innerHTML =
             leadCellsHtml +
             "<td><select class='cell-select status-select chip-steel' data-field='status'>" +
-                "<option value='Pending' selected>Pending</option>" +
-                "<option value='Submitted'>Submitted</option>" +
-                "<option value='Not Submitted'>Not Submitted</option>" +
-                "<option value='Approved'>Approved</option>" +
-                "<option value='Needs Revision'>Needs Revision</option>" +
-                "<option value='Rejected'>Rejected</option>" +
-                "<option value='Completed'>Completed</option>" +
+                currentStatuses.map(function(name){
+                    return "<option value='" + escapeHtml(name) + "'" + (name === 'Pending' ? ' selected' : '') + ">" + escapeHtml(name) + "</option>";
+                }).join('') +
             "</select></td>" +
             "<td><div class='cell-text' contenteditable='true' data-field='remarks'></div></td>" +
             "<td><span class='muted-copy'>No document submitted</span></td>" +
@@ -956,6 +1020,25 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
 
     // One loader for all three ways of moving around: picking an office tile,
     // opening an area card, and stepping back out to the areas.
+    // The Status filter lists what the office on screen can use. Whatever was
+    // chosen stays chosen only if it is still on the list.
+    function applyStatusOptions(names){
+        if(!names || !filterStatus){ return; }
+        currentStatuses = names;
+        var keep = filterStatus.value;
+        filterStatus.innerHTML = "<option value=''>Any status</option>" + names.map(function(name){
+            return "<option value='" + escapeHtml(name) + "'>" + escapeHtml(name) + "</option>";
+        }).join('');
+        filterStatus.value = names.indexOf(keep) !== -1 ? keep : '';
+    }
+
+    function resetFiltersToDefault(){
+        if(filterSearch){ filterSearch.value = ''; }
+        [filterInCharge, filterStatus, filterYear].forEach(function(control){
+            if(control){ control.value = ''; }
+        });
+    }
+
     function loadGrid(office, program, area){
         auditTbody.innerHTML = "<tr><td colspan='" + gridColumnCount(office) + "' class='empty-state'>Loading&hellip;</td></tr>";
 
@@ -979,6 +1062,8 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
                 auditTbody.innerHTML = data.html;
                 auditTitle.textContent = data.title;
                 updateGridHeader(currentOffice);
+                applyStatusOptions(data.statuses);
+                if(manageStatusesBtn){ manageStatusesBtn.style.display = currentOffice === '' ? 'none' : ''; }
                 initInChargeCells(auditTbody);
 
                 // Add Row needs somewhere to file the recommendation: not on
@@ -1046,6 +1131,137 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
         });
     }
 
+    // ---- Manage this office's own statuses ---------------------------------
+    var statusBackdrop = document.getElementById('statusModalBackdrop');
+    var statusMsgEl = document.getElementById('statusMsg');
+    var statusCustomList = document.getElementById('statusCustomList');
+    var statusAddForm = document.getElementById('statusAddForm');
+    var statusNewName = document.getElementById('statusNewName');
+
+    function showStatusMsg(text, kind){
+        statusMsgEl.textContent = text || '';
+        statusMsgEl.className = 'status-msg' + (kind ? ' ' + kind : '');
+    }
+
+    function statusRequest(fields){
+        var body = Object.keys(fields).map(function(k){
+            return encodeURIComponent(k) + '=' + encodeURIComponent(fields[k]);
+        }).join('&');
+        return fetch('recommendations_api.php', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: body
+        }).then(function(res){ return res.json(); }).then(function(data){
+            if(!data.ok){ throw new Error(data.error || 'Something went wrong'); }
+            return data;
+        });
+    }
+
+    function renderStatusManager(data){
+        document.getElementById('statusModalTitle').innerHTML = "<i class='bi bi-sliders'></i> ";
+        document.getElementById('statusModalTitle').appendChild(document.createTextNode('Statuses — ' + data.office));
+        document.getElementById('statusModalNote').textContent =
+            'Statuses you add here belong to ' + data.office + ' only. Other offices do not see them.';
+
+        var builtin = document.getElementById('statusBuiltinList');
+        builtin.innerHTML = '';
+        BUILTIN_STATUSES.forEach(function(name){
+            var chip = document.createElement('span');
+            chip.textContent = name;
+            builtin.appendChild(chip);
+        });
+
+        statusCustomList.innerHTML = '';
+        if(!data.custom.length){
+            var none = document.createElement('div');
+            none.className = 'muted-copy';
+            none.textContent = 'None yet.';
+            statusCustomList.appendChild(none);
+        }
+        data.custom.forEach(function(item){
+            var row = document.createElement('div');
+            row.className = 'status-custom-row';
+
+            var input = document.createElement('input');
+            input.type = 'text';
+            input.maxLength = 40;
+            input.value = item.name;
+            input.setAttribute('aria-label', 'Status name');
+
+            var use = document.createElement('span');
+            use.className = 'status-use';
+            var n = parseInt(item.in_use, 10) || 0;
+            use.textContent = n + (n === 1 ? ' recommendation' : ' recommendations');
+
+            var save = document.createElement('button');
+            save.type = 'button'; save.className = 'status-mini save'; save.textContent = 'Rename';
+            save.addEventListener('click', function(){
+                if(input.value.trim() === item.name){ return; }
+                statusRequest({action: 'rename_office_status', id: item.id, name: input.value.trim()})
+                    .then(function(res){ afterStatusChange(res, item.name); })
+                    .catch(function(err){ showStatusMsg(err.message, 'error'); });
+            });
+
+            var del = document.createElement('button');
+            del.type = 'button'; del.className = 'status-mini del';
+            del.innerHTML = "<i class='bi bi-trash3'></i>";
+            del.setAttribute('aria-label', 'Delete ' + item.name);
+            if(n > 0){
+                del.disabled = true;
+                del.title = 'Still set on ' + n + ' recommendation(s)';
+            }
+            del.addEventListener('click', function(){
+                if(!window.confirm('Delete the status "' + item.name + '" for ' + data.office + '?')){ return; }
+                statusRequest({action: 'delete_office_status', id: item.id})
+                    .then(function(res){ afterStatusChange(res, item.name); })
+                    .catch(function(err){ showStatusMsg(err.message, 'error'); });
+            });
+
+            row.appendChild(input); row.appendChild(use); row.appendChild(save); row.appendChild(del);
+            statusCustomList.appendChild(row);
+        });
+    }
+
+    // After any change: refresh the menus, drop a filter that no longer exists,
+    // and redraw the grid so rows pick up the new options.
+    function afterStatusChange(res, oldName){
+        renderStatusManager(res);
+        showStatusMsg(res.message || 'Saved.', 'ok');
+        if(filterStatus && filterStatus.value === oldName && (res.renamed_from || res.deleted)){
+            filterStatus.value = '';
+        }
+        applyStatusOptions(res.statuses);
+        loadGrid(currentOffice, currentProgram, currentArea);
+    }
+
+    function openStatusManager(){
+        if(currentOffice === ''){ return; }
+        showStatusMsg('');
+        statusNewName.value = '';
+        statusBackdrop.classList.add('is-open');
+        statusRequest({action: 'list_office_statuses', office: currentOffice})
+            .then(renderStatusManager)
+            .catch(function(err){ showStatusMsg(err.message, 'error'); });
+        statusNewName.focus();
+    }
+    function closeStatusManager(){ statusBackdrop.classList.remove('is-open'); }
+
+    if(manageStatusesBtn){ manageStatusesBtn.addEventListener('click', openStatusManager); }
+    document.getElementById('statusModalClose').addEventListener('click', closeStatusManager);
+    document.getElementById('statusModalDone').addEventListener('click', closeStatusManager);
+    statusBackdrop.addEventListener('click', function(e){ if(e.target === statusBackdrop){ closeStatusManager(); } });
+    document.addEventListener('keydown', function(e){
+        if(e.key === 'Escape' && statusBackdrop.classList.contains('is-open')){ closeStatusManager(); }
+    });
+    statusAddForm.addEventListener('submit', function(e){
+        e.preventDefault();
+        var name = statusNewName.value.trim();
+        if(name === ''){ showStatusMsg('Enter a status name.', 'error'); return; }
+        statusRequest({action: 'add_office_status', office: currentOffice, name: name})
+            .then(function(res){ statusNewName.value = ''; afterStatusChange(res, ''); })
+            .catch(function(err){ showStatusMsg(err.message, 'error'); });
+    });
+
     officeTabs.addEventListener('click', function(e){
         var tile = e.target.closest('.office-tile');
         if(!tile){ return; }
@@ -1055,7 +1271,10 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
         officeTabs.querySelectorAll('.office-tile').forEach(function(t){ t.classList.remove('active'); });
         tile.classList.add('active');
 
-        // Switching office always starts at that office's top level.
+        // Switching office starts at that office's top level with the filters
+        // back at Anyone in charge / Any status / Any year, so nothing chosen
+        // for the last office quietly hides rows in this one.
+        resetFiltersToDefault();
         loadGrid(office, '', '');
     });
 
@@ -1088,6 +1307,77 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
             }
         });
     }
+})();
+
+(function(){
+    var backdrop = document.getElementById('historyModalBackdrop');
+    if(!backdrop){ return; }
+    var listEl = document.getElementById('historyList');
+    var metaEl = document.getElementById('historyMeta');
+
+    function esc(text){
+        return String(text == null ? '' : text).replace(/[&<>"']/g, function(ch){
+            return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[ch];
+        });
+    }
+
+    function close(){ backdrop.classList.remove('is-open'); }
+
+    function render(data){
+        metaEl.innerHTML = "<div class='hist-meta-office'>" + esc(data.office || 'Unknown office') +
+            (data.status ? ' &middot; ' + esc(data.status) : '') + "</div>" +
+            "<div class='hist-meta-text'>" +
+            esc(data.recommendation && data.recommendation.trim() !== ''
+                ? data.recommendation
+                : (data.exists ? 'This recommendation has no text yet.' : 'This recommendation has been deleted.')) +
+            "</div>";
+
+        listEl.innerHTML = data.entries.length
+            ? data.entries.map(function(e){
+                return "<div class='hist-item'>" +
+                    "<span class='hist-icon " + esc(e['class']) + "'><i class='bi " + esc(e.icon) + "'></i></span>" +
+                    "<span class='hist-body'>" +
+                        "<span class='hist-head'><span class='hist-label'>" + esc(e.label) + "</span>" +
+                        "<span class='hist-when'>" + esc(e.at) + "</span></span>" +
+                        (e.description ? "<span class='hist-desc'>" + esc(e.description) + "</span>" : "") +
+                        "<span class='hist-actor'>" + esc(e.actor) + " &middot; " + esc(e.username) + " (" + esc(e.role) + ")</span>" +
+                    "</span>" +
+                "</div>";
+              }).join('')
+            : "<div class='hist-empty'>Nothing has happened to this recommendation yet.</div>";
+    }
+
+    function open(id){
+        metaEl.innerHTML = '';
+        listEl.innerHTML = "<div class='hist-empty'>Loading&hellip;</div>";
+        backdrop.classList.add('is-open');
+
+        fetch('recommendation_history.php?id=' + encodeURIComponent(id))
+            .then(function(res){ return res.json(); })
+            .then(function(data){
+                if(!data.ok){ throw new Error(data.error || 'Could not load'); }
+                render(data);
+            })
+            .catch(function(){
+                listEl.innerHTML = "<div class='hist-empty'>Could not load this recommendation's activity.</div>";
+            });
+    }
+
+    document.addEventListener('click', function(e){
+        var trigger = e.target.closest('[data-history-trigger]');
+        if(trigger){
+            e.preventDefault();
+            open(trigger.getAttribute('data-rec-id'));
+            return;
+        }
+        if(e.target === backdrop || e.target.closest('#historyModalClose, #historyModalDone')){
+            close();
+        }
+    });
+
+    document.addEventListener('keydown', function(e){
+        if(e.key === 'Escape'){ close(); }
+    });
 })();
 </script>
 <?php render_edit_toggle(); ?>

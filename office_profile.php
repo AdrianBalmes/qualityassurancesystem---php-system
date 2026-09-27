@@ -58,14 +58,53 @@ if(!is_dir($avatarDir)){
     mkdir($avatarDir, 0775, true);
 }
 
+$passwordMessage = "";
+$passwordError = "";
+
+if(isset($_POST['change_password'])){
+    $currentPassword = (string) ($_POST['current_password'] ?? '');
+    $newPassword     = (string) ($_POST['new_password'] ?? '');
+    $confirmPassword = (string) ($_POST['confirm_password'] ?? '');
+    $currentMatches  = password_verify($currentPassword, $user['password']) || hash_equals($user['password'], $currentPassword);
+
+    if($currentPassword === "" || $newPassword === "" || $confirmPassword === ""){
+        $passwordError = "Fill in your current password, the new one, and its confirmation.";
+    } elseif(!$currentMatches){
+        $passwordError = "Current password is incorrect.";
+    } elseif(strlen($newPassword) < 8){
+        // Same minimum as registration and password reset.
+        $passwordError = "New password must be at least 8 characters.";
+    } elseif($newPassword !== $confirmPassword){
+        $passwordError = "New password and confirmation do not match.";
+    } elseif(hash_equals($currentPassword, $newPassword)){
+        $passwordError = "Choose a password different from your current one.";
+    } else {
+        $hashed = password_hash($newPassword, PASSWORD_DEFAULT);
+        $pwUpdate = $conn->prepare("UPDATE users SET password = ? WHERE id = ?");
+        $pwUpdate->bind_param("si", $hashed, $user['id']);
+        if($pwUpdate->execute()){
+            // A new session id now the credential has changed; the sign-in
+            // itself stays.
+            session_regenerate_id(true);
+            $user['password'] = $hashed;
+            $passwordMessage = "Your password has been changed.";
+            log_audit_event($conn, $user['username'], 'office', $office, 'password_changed', 'user', $user['id'], "{$office} user \"{$user['username']}\" changed their password");
+        } else {
+            $passwordError = "Could not change the password. Please try again.";
+        }
+    }
+}
+
 if(isset($_POST['save_profile'])){
     $newFullName = trim($_POST['full_name'] ?? '');
     $newUsername = trim($_POST['username']);
     $newEmail = trim($_POST['email']);
     $newPhone = trim($_POST['phone']);
-    $currentPassword = trim($_POST['current_password']);
-    $newPassword = trim($_POST['new_password']);
-    $confirmPassword = trim($_POST['confirm_password']);
+    // Passwords are changed from their own panel. These stay empty here, so the
+    // save below never touches the password.
+    $currentPassword = "";
+    $newPassword = "";
+    $confirmPassword = "";
     $removePhoto = isset($_POST['remove_photo']);
     $currentPasswordMatches = password_verify($currentPassword, $user['password']) || hash_equals($user['password'], $currentPassword);
 
@@ -221,6 +260,7 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
                     <div class="info-row"><span class="info-icon icon-yellow"><i class="bi bi-clock-history"></i></span><div><div class="info-label">Last Login</div><div class="info-value"><?php echo htmlspecialchars($lastLogin, ENT_QUOTES); ?></div></div></div>
                 </div>
                 <button type="button" class="action-btn w-100" id="showEditProfile"><i class="bi bi-pencil-square"></i> Edit Profile</button>
+                <button type="button" class="action-btn secondary-btn w-100" id="showChangePassword"><i class="bi bi-key-fill"></i> Change Password</button>
                 <a class="action-btn secondary-btn w-100" href="<?php echo htmlspecialchars($officeDashboardUrl, ENT_QUOTES); ?>"><i class="bi bi-arrow-left"></i> Back to Dashboard</a>
                 <a class="action-btn logout-btn w-100" href="logout.php?scope=office"><i class="bi bi-box-arrow-right"></i> Sign Out</a>
             </div>
@@ -279,36 +319,47 @@ body{margin:0;background:#eef3fb;color:#344156;font-family:Arial,Helvetica,sans-
                         </div>
                     </div>
                 </div>
+                <div class="action-row">
+                    <button type="submit" name="save_profile" class="action-btn"><i class="bi bi-check2-circle"></i> Save Changes</button>
+                    <button type="button" class="action-btn secondary-btn" id="hideEditProfile"><i class="bi bi-x-circle"></i> Cancel</button>
+                </div>
+            </form>
+        </div>
+        <div class="panel panel-pad edit-panel <?php echo ($passwordMessage !== "" || $passwordError !== "") ? "is-visible" : ""; ?>" id="changePasswordPanel">
+            <h2 class="panel-title">Change Password</h2>
+            <?php if($passwordMessage !== ""): ?><div class="alert alert-success"><?php echo htmlspecialchars($passwordMessage, ENT_QUOTES); ?></div><?php endif; ?>
+            <?php if($passwordError !== ""): ?><div class="alert alert-danger"><?php echo htmlspecialchars($passwordError, ENT_QUOTES); ?></div><?php endif; ?>
+            <form method="POST" autocomplete="off">
                 <div class="form-section">
                     <h3 class="section-title"><i class="bi bi-lock-fill"></i> Password</h3>
-                    <div class="muted-copy mb-3">Leave these fields blank if you do not want to change your password.</div>
+                    <div class="muted-copy mb-3">Use at least 8 characters. You stay signed in after changing it.</div>
                     <div class="row g-3">
                         <div class="col-md-4">
-                            <label class="form-label">Current Password</label>
+                            <label class="form-label" for="cpCurrent">Current Password</label>
                             <div class="password-field">
-                                <input type="password" name="current_password" class="form-control password-input" placeholder="Required to change password">
-                                <button type="button" class="password-toggle" data-toggle-password><i class="bi bi-eye"></i></button>
+                                <input type="password" id="cpCurrent" name="current_password" class="form-control password-input" autocomplete="current-password" required>
+                                <button type="button" class="password-toggle" data-toggle-password aria-label="Show or hide password"><i class="bi bi-eye"></i></button>
                             </div>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label">New Password</label>
+                            <label class="form-label" for="cpNew">New Password</label>
                             <div class="password-field">
-                                <input type="password" name="new_password" class="form-control password-input">
-                                <button type="button" class="password-toggle" data-toggle-password><i class="bi bi-eye"></i></button>
+                                <input type="password" id="cpNew" name="new_password" class="form-control password-input" autocomplete="new-password" minlength="8" required>
+                                <button type="button" class="password-toggle" data-toggle-password aria-label="Show or hide password"><i class="bi bi-eye"></i></button>
                             </div>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label">Confirm Password</label>
+                            <label class="form-label" for="cpConfirm">Confirm New Password</label>
                             <div class="password-field">
-                                <input type="password" name="confirm_password" class="form-control password-input">
-                                <button type="button" class="password-toggle" data-toggle-password><i class="bi bi-eye"></i></button>
+                                <input type="password" id="cpConfirm" name="confirm_password" class="form-control password-input" autocomplete="new-password" minlength="8" required>
+                                <button type="button" class="password-toggle" data-toggle-password aria-label="Show or hide password"><i class="bi bi-eye"></i></button>
                             </div>
                         </div>
                     </div>
                 </div>
                 <div class="action-row">
-                    <button type="submit" name="save_profile" class="action-btn"><i class="bi bi-check2-circle"></i> Save Changes</button>
-                    <button type="button" class="action-btn secondary-btn" id="hideEditProfile"><i class="bi bi-x-circle"></i> Cancel</button>
+                    <button type="submit" name="change_password" class="action-btn"><i class="bi bi-check2-circle"></i> Update Password</button>
+                    <button type="button" class="action-btn secondary-btn" id="hideChangePassword"><i class="bi bi-x-circle"></i> Cancel</button>
                 </div>
             </form>
         </div>
@@ -327,8 +378,28 @@ function openEditPanel(){
     editPanel.scrollIntoView({behavior:'smooth', block:'start'});
 }
 
+const passwordPanel = document.getElementById('changePasswordPanel');
+const showPassword = document.getElementById('showChangePassword');
+const hidePassword = document.getElementById('hideChangePassword');
+
+function openPasswordPanel(){
+    if(editPanel){ editPanel.classList.remove('is-visible'); }
+    passwordPanel.classList.add('is-visible');
+    passwordPanel.scrollIntoView({behavior:'smooth', block:'start'});
+    const first = document.getElementById('cpCurrent');
+    if(first){ first.focus({preventScroll:true}); }
+}
+
+if(showPassword && passwordPanel){ showPassword.addEventListener('click', openPasswordPanel); }
+if(hidePassword && passwordPanel){
+    hidePassword.addEventListener('click', function(){ passwordPanel.classList.remove('is-visible'); });
+}
+
 if(showEdit && editPanel){
-    showEdit.addEventListener('click', openEditPanel);
+    showEdit.addEventListener('click', function(){
+        if(passwordPanel){ passwordPanel.classList.remove('is-visible'); }
+        openEditPanel();
+    });
 }
 
 if(hideEdit && editPanel){

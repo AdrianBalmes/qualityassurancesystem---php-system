@@ -106,6 +106,33 @@ function recommendation_year_end($year){
     return (int) end($matches[0]);
 }
 
+/**
+ * Once one of these is the recommendation's status, a decision rests on the
+ * evidence, so the office can no longer withdraw it.
+ */
+const DOCUMENT_LOCKED_STATUSES = ['Approved', 'Rejected', 'Completed'];
+
+/**
+ * Whether an office may take back a document it submitted.
+ *
+ * Free while the submission is still open -- including Needs Revision, which
+ * is exactly when a file needs replacing. Locked once the document carries a
+ * review decision of its own (the per-document review College Department
+ * uses) or the recommendation itself has been decided.
+ *
+ * The page and the API both ask this, so a button can never offer what the
+ * server would refuse.
+ */
+function office_can_remove_document($doc, $recommendationStatus, $office){
+    if(trim((string) ($doc['office'] ?? '')) !== $office){
+        return false;
+    }
+    if(trim((string) ($doc['review_status'] ?? '')) !== ''){
+        return false;
+    }
+    return !in_array(trim((string) $recommendationStatus), DOCUMENT_LOCKED_STATUSES, true);
+}
+
 function classify_recommendation_status($row){
     if($row['status'] === 'Completed'){
         return 'Completed';

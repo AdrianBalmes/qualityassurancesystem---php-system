@@ -347,8 +347,8 @@ img,canvas,svg{max-width:100%}
 .inbox-head{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border-bottom:1px solid #e6edf7;background:#f8fbff;font-size:13px;font-weight:800;color:#26354b}
 .inbox-state{font-size:11.5px;font-weight:700;color:#66758d}
 .inbox-list{max-height:320px;overflow-y:auto;overscroll-behavior:contain}
-.inbox-item{display:flex;gap:10px;padding:10px 14px;border-bottom:1px solid #f0f4fa;text-decoration:none;color:inherit}
-.inbox-item:hover{background:#f7fbff}
+.nav-links .inbox-item{display:flex;gap:10px;padding:10px 14px;border-bottom:1px solid #f0f4fa;text-decoration:none;color:#26354b}
+.nav-links .inbox-item:hover{background:#f7fbff}
 .inbox-item.is-unread{background:#f3f8ff}
 .inbox-icon{width:28px;height:28px;flex-shrink:0;border-radius:7px;display:grid;place-items:center;font-size:13px}
 .inbox-text{display:flex;flex-direction:column;gap:2px;min-width:0}
@@ -359,12 +359,15 @@ img,canvas,svg{max-width:100%}
 .inbox-empty{padding:24px 14px;text-align:center;color:#8492a8;font-size:12.5px;display:grid;gap:6px;justify-items:center}
 .inbox-empty i{font-size:22px}
 .inbox-foot{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:9px 12px;border-top:1px solid #e6edf7;background:#f8fbff}
-.inbox-action{border:1px solid #c8d4e7;border-radius:5px;background:#fff;color:#2e67b8;font-weight:800;font-size:11.5px;padding:6px 9px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;text-decoration:none}
-.inbox-action:hover{background:#eef4ff;border-color:#316fc4;color:#2e67b8;text-decoration:none}
-.inbox-action:disabled{opacity:.45;cursor:not-allowed}
-.inbox-action-danger{color:#a33831}
-.inbox-action-danger:hover{background:#ffe1dc;border-color:#e0a49c;color:#a33831}
-.inbox-action-link{margin-left:auto;border-color:transparent;background:transparent}
+/* .nav-links a,.nav-links button paints the top bar near-white and strips
+   padding and borders. That beats a single class, so every rule below is
+   written two classes deep or the footer turns invisible on its own panel. */
+.nav-links .inbox-action{border:1px solid #c8d4e7;border-radius:5px;background:#fff;color:#2e67b8;font-weight:800;font-size:11.5px;padding:6px 9px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;text-decoration:none}
+.nav-links .inbox-action:hover{background:#eef4ff;border-color:#316fc4;color:#2e67b8;text-decoration:none}
+.nav-links .inbox-action:disabled{opacity:.45;cursor:not-allowed}
+.nav-links .inbox-action-danger{color:#a33831}
+.nav-links .inbox-action-danger:hover{background:#ffe1dc;border-color:#e0a49c;color:#a33831}
+.nav-links .inbox-action-link{margin-left:auto;border-color:transparent;background:transparent}
 .board-title{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .board-unread{display:inline-flex;align-items:center;background:#e0533f;color:#fff;font-size:11px;font-weight:800;padding:2px 8px;border-radius:999px;margin-left:6px;vertical-align:middle}
 .board-mark-read{border:1px solid #c8d4e7;border-radius:5px;background:#fff;color:#2e67b8;font-weight:800;font-size:12px;padding:5px 10px;cursor:pointer}

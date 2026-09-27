@@ -7,6 +7,7 @@ require_once __DIR__ . "/office_directory.php";
 require_once __DIR__ . "/audit_log_helper.php";
 require_once __DIR__ . "/review_columns.php";
 require_once __DIR__ . "/in_charge.php";
+require_once __DIR__ . "/notifications.php";
 header('Content-Type: application/json');
 
 $action = $_POST['action'] ?? '';
@@ -184,6 +185,24 @@ if($action === 'save_in_charge'){
 
     $names = in_charge_decode($inCharge);
     $who = !empty($names) ? implode(', ', $names) : 'nobody';
+
+    // An office added here sees the recommendation on its dashboard from now
+    // on, so it is told the same way it would be told about a new one.
+    $knownOffices = get_all_office_names($conn);
+    $newlyAssigned = array_values(array_filter($names, function($name) use ($stored, $knownOffices){
+        return in_array($name, $knownOffices, true) && !in_array($name, $stored, true);
+    }));
+    if(!empty($newlyAssigned)){
+        $recStmt = $conn->prepare("SELECT recommendation FROM audit_recommendations WHERE id = ? LIMIT 1");
+        $recStmt->bind_param("i", $id);
+        $recStmt->execute();
+        $recText = trim((string) ($recStmt->get_result()->fetch_assoc()['recommendation'] ?? ''));
+
+        notify_offices($conn, $newlyAssigned, NOTIFY_ASSIGNED, $id,
+            "Your office was put in charge of a {$row['office']} recommendation",
+            $recText !== '' ? $recText : 'The recommendation has not been written out yet.',
+            $actorOffice);
+    }
     log_audit_event($conn, $actorUsername, $actorRole, $actorOffice, 'in_charge_updated', 'recommendation', $id,
         "Set who is in charge of recommendation #{$id} ({$row['office']}) to {$who}");
 
@@ -234,7 +253,7 @@ if($action === 'save_office_recommendation'){
         }
     }
 
-    $beforeStmt = $conn->prepare("SELECT office, status FROM audit_recommendations WHERE id = ? LIMIT 1");
+    $beforeStmt = $conn->prepare("SELECT office, status, recommendation, in_charge FROM audit_recommendations WHERE id = ? LIMIT 1");
     $beforeStmt->bind_param("i", $id);
     $beforeStmt->execute();
     $beforeRow = $beforeStmt->get_result()->fetch_assoc();
@@ -251,6 +270,21 @@ if($action === 'save_office_recommendation'){
     if($beforeRow){
         $statusChange = $beforeRow['status'] !== $status ? " (status: {$beforeRow['status']} \xe2\x86\x92 {$status})" : "";
         log_audit_event($conn, $adminUsername, 'admin', $beforeRow['office'], 'recommendation_updated', 'recommendation', $id, "Updated recommendation for {$beforeRow['office']}{$statusChange}");
+
+        // A row is created blank and filled in afterwards, so the moment it
+        // becomes a real recommendation is the moment it first has text --
+        // not the moment the row appeared.
+        $recipients = notification_recipients($conn, ['office' => $beforeRow['office'], 'in_charge' => $inCharge]);
+        $wasBlank = trim((string) $beforeRow['recommendation']) === '';
+
+        if($wasBlank && $recommendation !== ''){
+            notify_offices($conn, $recipients, NOTIFY_NEW, $id,
+                'New recommendation for your office', $recommendation);
+        } elseif($beforeRow['status'] !== $status){
+            notify_offices($conn, $recipients, NOTIFY_STATUS, $id,
+                "Status changed to {$status}",
+                ($recommendation !== '' ? $recommendation : 'This recommendation has no text yet.'));
+        }
     }
 
     echo json_encode(['ok' => true]);
@@ -353,7 +387,7 @@ if($action === 'review_recommendation'){
         exit();
     }
 
-    $beforeStmt = $conn->prepare("SELECT office, status FROM audit_recommendations WHERE id = ? LIMIT 1");
+    $beforeStmt = $conn->prepare("SELECT office, status, recommendation, in_charge FROM audit_recommendations WHERE id = ? LIMIT 1");
     $beforeStmt->bind_param("i", $id);
     $beforeStmt->execute();
     $beforeRow = $beforeStmt->get_result()->fetch_assoc();
@@ -410,6 +444,19 @@ if($action === 'review_recommendation'){
     $statusChangeNote = $beforeRow['status'] !== $newStatus ? " (status: {$beforeRow['status']} \xe2\x86\x92 {$newStatus})" : "";
     $docNote = $reviewedDoc ? " (document: {$reviewedDoc['original_name']})" : "";
     log_audit_event($conn, $adminUsername, 'admin', $beforeRow['office'], 'recommendation_reviewed', 'recommendation', $id, "Admin {$verb} recommendation for {$beforeRow['office']}{$docNote}{$statusChangeNote}");
+
+    // Feedback with no decision still changes what the office has to act on,
+    // so it is worth a notice of its own.
+    $reviewRecipients = notification_recipients($conn, $beforeRow);
+    $recSnippet = trim((string) $beforeRow['recommendation']);
+    if($beforeRow['status'] !== $newStatus){
+        notify_offices($conn, $reviewRecipients, NOTIFY_STATUS, $id,
+            "Status changed to {$newStatus}",
+            $reviewRemarks !== '' ? $reviewRemarks : $recSnippet);
+    } elseif($reviewRemarks !== ''){
+        notify_offices($conn, $reviewRecipients, NOTIFY_FEEDBACK, $id,
+            'New review feedback', $reviewRemarks);
+    }
 
     echo json_encode(['ok' => true, 'status' => $newStatus, 'review_remarks' => $reviewRemarks, 'doc_id' => $reviewedDoc ? (int) $reviewedDoc['id'] : null, 'doc_review_status' => $reviewedDoc ? $docReviewStatus : null]);
     exit();

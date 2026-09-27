@@ -162,7 +162,7 @@ if(isset($_POST['submit_compliance'])){
         $docStmt->execute();
         $documentId = $conn->insert_id;
 
-        log_audit_event($conn, $_SESSION['office_username'], 'office', $office, 'document_uploaded', 'document', $documentId, "{$office} uploaded supporting document \"{$original_name}\" for recommendation #{$recId}");
+        log_audit_event($conn, $_SESSION['office_username'], 'office', $office, 'document_uploaded', 'document', $documentId, "{$office} uploaded supporting document \"{$original_name}\" for recommendation #{$recId}", $recId);
 
         // Mirror the file into the shared OneDrive repository. This never
         // throws -- if OneDrive is unreachable the file is queued and
@@ -299,6 +299,12 @@ body{margin:0;background:#f1f5fb;color:#344156;font-family:Arial,Helvetica,sans-
 .link-strong{font-weight:800;text-decoration:none;color:#2e67b8}
 .empty-state{padding:16px;text-align:center;color:#66758d;font-weight:700}
 .doc-pill-list{display:flex;flex-direction:column;gap:8px}
+.doc-pill-row{display:flex;align-items:center;gap:8px}
+.doc-pill-row .doc-pill{flex:1;min-width:0}
+.doc-delete-btn{border:0;border-radius:6px;background:#ffe1dc;color:#a33831;width:32px;height:32px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.doc-delete-btn:hover{background:#ffcac1}
+.doc-delete-btn:disabled{opacity:.5;cursor:not-allowed}
+.doc-note{font-size:12px;color:#8492a8;font-style:italic;margin-top:8px}
 .doc-pill{font-size:13px;font-weight:700;color:#2e67b8;text-decoration:none;word-break:break-word;display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #dbe3ef;border-radius:6px}
 .doc-pill:hover{background:#f7fbff}
 .doc-trigger-btn{border:1px solid #c8d4e7;border-radius:5px;background:#eef4ff;color:#2e67b8;font-weight:800;font-size:12.5px;padding:6px 10px;display:inline-flex;align-items:center;gap:7px;cursor:pointer}
@@ -315,6 +321,36 @@ body{margin:0;background:#f1f5fb;color:#344156;font-family:Arial,Helvetica,sans-
 .doc-sidebar-rec{padding:12px 18px;border-bottom:1px solid #e6edf7;font-size:13px;font-weight:700;color:#344156;background:#f8fbff}
 .doc-sidebar-body{padding:14px 18px;overflow-y:auto;flex:1}
 .compliance-btn{border:0;background:#eef4ff;color:#2e67b8;border-radius:6px;padding:6px 10px;font-weight:800;font-size:12.5px;white-space:nowrap}
+.action-cell{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.history-btn{border:0;background:#eef4ff;color:#2e67b8;border-radius:6px;width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
+.history-btn:hover{background:#dfeaff}
+.hist-backdrop{position:fixed;inset:0;background:rgba(15,26,42,.45);opacity:0;pointer-events:none;transition:opacity .2s ease;z-index:1100;display:flex;align-items:center;justify-content:center;padding:20px}
+.hist-backdrop.is-open{opacity:1;pointer-events:auto}
+.hist-modal{background:#fff;border-radius:10px;box-shadow:0 20px 50px rgba(15,26,42,.3);width:min(560px,100%);max-height:90vh;display:flex;flex-direction:column;transform:translateY(16px);transition:transform .2s ease}
+.hist-backdrop.is-open .hist-modal{transform:translateY(0)}
+.hist-modal-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #e6edf7}
+.hist-modal-head h3{margin:0;font-size:16px;font-weight:800;color:#26354b;display:flex;align-items:center;gap:8px}
+.hist-modal-body{padding:16px 20px;overflow-y:auto;display:grid;gap:12px}
+.hist-modal-foot{padding:14px 20px;border-top:1px solid #e6edf7;display:flex;justify-content:flex-end}
+.hist-close{border:0;background:#eef4ff;color:#2e67b8;width:30px;height:30px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.hist-done{border:0;border-radius:5px;background:#f1f3f7;color:#56637a;font-weight:800;font-size:12.5px;padding:9px 14px;cursor:pointer}
+.hist-meta{background:#f8fbff;border:1px solid #e6edf7;border-radius:6px;padding:10px 12px}
+.hist-meta-office{font-size:11.5px;font-weight:800;text-transform:uppercase;color:#66758d;margin-bottom:2px}
+.hist-meta-text{font-size:13.5px;color:#344156;word-break:break-word}
+.hist-list{display:flex;flex-direction:column}
+.hist-item{display:flex;gap:12px;padding:12px 2px;border-bottom:1px solid #f0f4fa}
+.hist-item:last-child{border-bottom:0}
+.hist-icon{width:30px;height:30px;flex-shrink:0;border-radius:8px;display:grid;place-items:center;font-size:14px}
+.hist-blue{background:#d8e2f5;color:#2e5fa3}.hist-green{background:#cdeedc;color:#277548}
+.hist-orange{background:#ffe3c2;color:#95530a}.hist-purple{background:#efe9fb;color:#5b3fa0}
+.hist-red{background:#ffd6d0;color:#a33831}.hist-steel{background:#e4e9f1;color:#4c5a72}
+.hist-body{display:flex;flex-direction:column;gap:3px;min-width:0}
+.hist-head{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+.hist-label{font-size:13px;font-weight:800;color:#26354b}
+.hist-when{font-size:11.5px;font-weight:700;color:#8492a8}
+.hist-desc{font-size:13px;color:#44536b;word-break:break-word}
+.hist-actor{font-size:11.5px;color:#66758d;font-weight:700}
+.hist-empty{padding:26px;text-align:center;color:#8492a8;font-weight:700}
 form{max-width:100%}input,select,textarea{max-width:100%}
 img,canvas,svg{max-width:100%}
 .inbox-toggle{position:relative}
@@ -544,14 +580,20 @@ img,canvas,svg{max-width:100%}
                             : "<button type='button' class='compliance-btn' data-bs-toggle='modal' data-bs-target='#complianceModal' data-rec-id='{$recId}' data-remarks=\"{$safeRemarksValue}\">
                                     <i class='bi bi-pencil-square'></i> Update Compliance
                                 </button>";
+                        $actionHtml = "<div class='action-cell'>" . $actionHtml
+                            . "<button type='button' class='history-btn' title='Activity for this recommendation' data-history-trigger data-rec-id='{$recId}'><i class='bi bi-clock-history'></i></button></div>";
 
                         $docsHtml = '<span class="muted-copy">None yet</span>';
                         if(!empty($docsByRecommendation[$recId])){
                             $docsForJs = [];
                             foreach($docsByRecommendation[$recId] as $doc){
                                 $docsForJs[] = [
+                                    'id' => (int) $doc['id'],
                                     'url' => "serve_upload.php?id=" . (int) $doc['id'],
                                     'label' => $doc['original_name'],
+                                    // Decided here so the button can never offer
+                                    // what recommendations_api.php would refuse.
+                                    'can_delete' => office_can_remove_document($doc, $row['status'], $office),
                                 ];
                             }
                             $docsJson = htmlspecialchars(json_encode($docsForJs), ENT_QUOTES);
@@ -581,6 +623,22 @@ img,canvas,svg{max-width:100%}
 </section>
 
 </main>
+
+<div class="hist-backdrop" id="historyBackdrop">
+    <div class="hist-modal" role="dialog" aria-modal="true" aria-labelledby="historyTitle">
+        <div class="hist-modal-head">
+            <h3 id="historyTitle"><i class="bi bi-clock-history"></i> Recommendation Activity</h3>
+            <button type="button" class="hist-close" id="historyClose" aria-label="Close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="hist-modal-body">
+            <div class="hist-meta" id="historyMeta"></div>
+            <div class="hist-list" id="historyList"></div>
+        </div>
+        <div class="hist-modal-foot">
+            <button type="button" class="hist-done" id="historyDone">Close</button>
+        </div>
+    </div>
+</div>
 
 <div class="modal fade" id="complianceModal" tabindex="-1" aria-labelledby="complianceModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -644,7 +702,11 @@ img,canvas,svg{max-width:100%}
                                     foreach($group['docs'] as $doc){
                                         $docUrl = "serve_upload.php?id=" . (int) $doc['id'];
                                         $docLabel = htmlspecialchars($doc['original_name'], ENT_QUOTES);
-                                        $filesHtml .= "<a class='doc-pill' href='" . htmlspecialchars($docUrl, ENT_QUOTES) . "' target='_blank'><i class='bi bi-paperclip'></i> {$docLabel}</a>";
+                                        $canRemove = office_can_remove_document($doc, $group['status'], $office);
+                                        $removeBtn = $canRemove
+                                            ? "<button type='button' class='doc-delete-btn' data-doc-delete data-doc-id='" . (int) $doc['id'] . "' title='Remove this file'><i class='bi bi-x-lg'></i></button>"
+                                            : "";
+                                        $filesHtml .= "<div class='doc-pill-row'><a class='doc-pill' href='" . htmlspecialchars($docUrl, ENT_QUOTES) . "' target='_blank'><i class='bi bi-paperclip'></i> {$docLabel}</a>{$removeBtn}</div>";
                                     }
                                     $filesHtml .= "</div>";
                                     echo "
@@ -713,6 +775,9 @@ new Chart(document.getElementById('ownStatusChart'), {
             var list = document.createElement('div');
             list.className = 'doc-pill-list';
             docs.forEach(function(doc){
+                var row = document.createElement('div');
+                row.className = 'doc-pill-row';
+
                 var a = document.createElement('a');
                 a.href = doc.url;
                 a.target = '_blank';
@@ -722,7 +787,22 @@ new Chart(document.getElementById('ownStatusChart'), {
                 icon.className = 'bi bi-paperclip';
                 a.appendChild(icon);
                 a.appendChild(document.createTextNode(doc.label || ''));
-                list.appendChild(a);
+                row.appendChild(a);
+
+                // Only files this office may still take back get a button; a
+                // reviewed or decided one is simply shown without it.
+                if(doc.can_delete){
+                    var del = document.createElement('button');
+                    del.type = 'button';
+                    del.className = 'doc-delete-btn';
+                    del.title = 'Remove this file';
+                    del.setAttribute('data-doc-delete', '');
+                    del.setAttribute('data-doc-id', doc.id);
+                    del.innerHTML = "<i class='bi bi-x-lg'></i>";
+                    row.appendChild(del);
+                }
+
+                list.appendChild(row);
             });
             bodyEl.appendChild(list);
         }
@@ -749,6 +829,103 @@ new Chart(document.getElementById('ownStatusChart'), {
     if(closeBtn){ closeBtn.addEventListener('click', closeSidebar); }
     backdrop.addEventListener('click', closeSidebar);
     document.addEventListener('keydown', function(e){ if(e.key === 'Escape'){ closeSidebar(); } });
+})();
+
+
+(function(){
+    var backdrop = document.getElementById('historyBackdrop');
+    if(!backdrop){ return; }
+    var listEl = document.getElementById('historyList');
+    var metaEl = document.getElementById('historyMeta');
+    var office = <?php echo json_encode($office); ?>;
+
+    function esc(text){
+        return String(text == null ? '' : text).replace(/[&<>"']/g, function(ch){
+            return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[ch];
+        });
+    }
+
+    function close(){ backdrop.classList.remove('is-open'); }
+
+    function render(data){
+        metaEl.innerHTML = "<div class='hist-meta-office'>" + esc(data.office || 'Unknown office') +
+            (data.status ? ' &middot; ' + esc(data.status) : '') + "</div>" +
+            "<div class='hist-meta-text'>" +
+            esc(data.recommendation && data.recommendation.trim() !== ''
+                ? data.recommendation
+                : 'This recommendation has no text yet.') + "</div>";
+
+        listEl.innerHTML = data.entries.length
+            ? data.entries.map(function(e){
+                return "<div class='hist-item'>" +
+                    "<span class='hist-icon " + esc(e['class']) + "'><i class='bi " + esc(e.icon) + "'></i></span>" +
+                    "<span class='hist-body'>" +
+                        "<span class='hist-head'><span class='hist-label'>" + esc(e.label) + "</span>" +
+                        "<span class='hist-when'>" + esc(e.at) + "</span></span>" +
+                        (e.description ? "<span class='hist-desc'>" + esc(e.description) + "</span>" : "") +
+                        "<span class='hist-actor'>" + esc(e.actor) + " &middot; " + esc(e.role) + "</span>" +
+                    "</span>" +
+                "</div>";
+              }).join('')
+            : "<div class='hist-empty'>Nothing has happened to this recommendation yet.</div>";
+    }
+
+    document.addEventListener('click', function(e){
+        var trigger = e.target.closest('[data-history-trigger]');
+        if(trigger){
+            e.preventDefault();
+            metaEl.innerHTML = '';
+            listEl.innerHTML = "<div class='hist-empty'>Loading&hellip;</div>";
+            backdrop.classList.add('is-open');
+
+            fetch('recommendation_history.php?id=' + encodeURIComponent(trigger.getAttribute('data-rec-id')) +
+                  '&office=' + encodeURIComponent(office))
+                .then(function(res){ return res.json(); })
+                .then(function(data){
+                    if(!data.ok){ throw new Error(data.error || 'Could not load'); }
+                    render(data);
+                })
+                .catch(function(){
+                    listEl.innerHTML = "<div class='hist-empty'>Could not load this recommendation's activity.</div>";
+                });
+            return;
+        }
+        if(e.target === backdrop || e.target.closest('#historyClose, #historyDone')){ close(); }
+    });
+
+    document.addEventListener('keydown', function(e){
+        if(e.key === 'Escape'){ close(); }
+    });
+})();
+
+
+(function(){
+    var office = <?php echo json_encode($office); ?>;
+
+    document.addEventListener('click', function(e){
+        var btn = e.target.closest('[data-doc-delete]');
+        if(!btn){ return; }
+        e.preventDefault();
+
+        if(!confirm('Remove this file from your submission? You can upload a corrected one afterwards.')){
+            return;
+        }
+
+        btn.disabled = true;
+        fetch('recommendations_api.php', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: 'action=delete_document&doc_id=' + encodeURIComponent(btn.getAttribute('data-doc-id')) +
+                  '&office=' + encodeURIComponent(office)
+        }).then(function(res){ return res.json(); }).then(function(data){
+            if(!data.ok){ throw new Error(data.error || 'Could not remove that file.'); }
+            var row = btn.closest('.doc-pill-row');
+            if(row){ row.remove(); }
+        }).catch(function(err){
+            btn.disabled = false;
+            alert(err.message || 'Could not remove that file. Please try again.');
+        });
+    });
 })();
 
 (function(){

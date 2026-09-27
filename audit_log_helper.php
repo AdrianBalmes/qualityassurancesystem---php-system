@@ -28,6 +28,24 @@ function ensure_audit_log_table($conn){
                              SET l.actor_full_name = u.full_name
                              WHERE u.full_name <> ''");
     }
+
+    // Which recommendation an entry belongs to, so one recommendation's own
+    // history can be pulled out without reading the description text.
+    // entity_id already holds it for recommendation entries; a document entry
+    // points at the document, so its recommendation is looked up once.
+    $recColumn = mysqli_query($conn, "SHOW COLUMNS FROM audit_log LIKE 'recommendation_id'");
+    if($recColumn && $recColumn->num_rows === 0){
+        mysqli_query($conn, "ALTER TABLE audit_log ADD COLUMN recommendation_id int(11) DEFAULT NULL AFTER entity_id");
+        mysqli_query($conn, "ALTER TABLE audit_log ADD KEY recommendation_id (recommendation_id)");
+        mysqli_query($conn, "UPDATE audit_log SET recommendation_id = entity_id WHERE entity_type = 'recommendation'");
+
+        $docTable = mysqli_query($conn, "SHOW TABLES LIKE 'recommendation_documents'");
+        if($docTable && $docTable->num_rows > 0){
+            mysqli_query($conn, "UPDATE audit_log l JOIN recommendation_documents d ON d.id = l.entity_id
+                                    SET l.recommendation_id = d.recommendation_id
+                                  WHERE l.entity_type = 'document'");
+        }
+    }
 }
 
 /**
@@ -84,13 +102,70 @@ function audit_client_ip(){
     return $remote;
 }
 
-function log_audit_event($conn, $actorUsername, $actorRole, $office, $action, $entityType, $entityId, $description){
+/**
+ * $recommendationId ties an entry to one recommendation's own history. A
+ * recommendation entry already says which through $entityId; a document entry
+ * points at the document, so the caller passes the recommendation itself.
+ */
+function log_audit_event($conn, $actorUsername, $actorRole, $office, $action, $entityType, $entityId, $description, $recommendationId = null){
     ensure_audit_log_table($conn);
     $ip = audit_client_ip();
     // Stored rather than joined at display time: the log has to stay readable
     // after someone renames their account or the account is removed.
     $fullName = audit_actor_full_name($conn, $actorUsername);
-    $stmt = $conn->prepare("INSERT INTO audit_log (actor_username, actor_full_name, actor_role, office, action, entity_type, entity_id, description, ip_address) VALUES (?,?,?,?,?,?,?,?,?)");
-    $stmt->bind_param("ssssssiss", $actorUsername, $fullName, $actorRole, $office, $action, $entityType, $entityId, $description, $ip);
+
+    if($recommendationId === null && $entityType === 'recommendation'){
+        $recommendationId = $entityId;
+    }
+    $recommendationId = $recommendationId > 0 ? (int) $recommendationId : null;
+
+    $stmt = $conn->prepare("INSERT INTO audit_log (actor_username, actor_full_name, actor_role, office, action, entity_type, entity_id, recommendation_id, description, ip_address) VALUES (?,?,?,?,?,?,?,?,?,?)");
+    $stmt->bind_param("ssssssiiss", $actorUsername, $fullName, $actorRole, $office, $action, $entityType, $entityId, $recommendationId, $description, $ip);
     $stmt->execute();
+}
+
+/** How one recommendation's own entries are labelled in its history modal. */
+function audit_action_label($action){
+    $labels = [
+        'recommendation_created' => ['label' => 'Created',          'icon' => 'bi-plus-circle',      'class' => 'hist-blue'],
+        'recommendation_updated' => ['label' => 'Edited',           'icon' => 'bi-pencil',           'class' => 'hist-steel'],
+        'recommendation_reviewed' => ['label' => 'Reviewed',        'icon' => 'bi-clipboard-check',  'class' => 'hist-purple'],
+        'in_charge_updated'      => ['label' => 'In Charge changed','icon' => 'bi-person-check',     'class' => 'hist-green'],
+        'compliance_submitted'   => ['label' => 'Compliance sent',  'icon' => 'bi-send',             'class' => 'hist-orange'],
+        'document_uploaded'      => ['label' => 'Document added',   'icon' => 'bi-paperclip',        'class' => 'hist-blue'],
+        'document_deleted'       => ['label' => 'Document removed', 'icon' => 'bi-trash3',           'class' => 'hist-red'],
+        'recommendation_deleted' => ['label' => 'Deleted',          'icon' => 'bi-trash3',           'class' => 'hist-red'],
+    ];
+    return $labels[$action] ?? ['label' => ucfirst(str_replace('_', ' ', $action)), 'icon' => 'bi-dot', 'class' => 'hist-steel'];
+}
+
+/**
+ * Whether one history entry is an office's business.
+ *
+ * Its own row -- what it did, or what was done to it -- always is. Beyond
+ * that, only entries describing the recommendation itself, so another
+ * office's compliance response and document names stay between that office
+ * and the administrator, exactly as they do on the dashboard.
+ */
+function recommendation_history_entry_is_visible($entry, $office){
+    if(trim((string) $entry['office']) === $office){
+        return true;
+    }
+
+    return $entry['entity_type'] === 'recommendation' && in_array($entry['action'], [
+        'recommendation_created',
+        'recommendation_updated',
+        'recommendation_reviewed',
+        'in_charge_updated',
+    ], true);
+}
+
+/** Every entry for one recommendation, oldest first -- it reads as a story. */
+function fetch_recommendation_history($conn, $recommendationId){
+    ensure_audit_log_table($conn);
+
+    $stmt = $conn->prepare("SELECT * FROM audit_log WHERE recommendation_id = ? ORDER BY created_at ASC, id ASC");
+    $stmt->bind_param("i", $recommendationId);
+    $stmt->execute();
+    return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 }

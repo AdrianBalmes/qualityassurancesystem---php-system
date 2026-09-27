@@ -7,6 +7,8 @@ require_once __DIR__ . "/office_directory.php";
 require_once __DIR__ . "/audit_log_helper.php";
 require_once __DIR__ . "/review_columns.php";
 require_once __DIR__ . "/in_charge.php";
+require_once __DIR__ . "/recommendation_rules.php";
+require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/office_statuses.php";
 require_once __DIR__ . "/notifications.php";
 header('Content-Type: application/json');
@@ -14,9 +16,11 @@ header('Content-Type: application/json');
 $action = $_POST['action'] ?? '';
 $isAdmin = isset($_SESSION['admin_username']) && $_SESSION['admin_role'] === 'admin';
 
-// Everything here is the administrator's. Offices do not assign who is in
-// charge; the office dashboard no longer offers it, and this refuses it too.
-if(!$isAdmin){
+// Everything here is the administrator's, bar one thing an office does on its
+// own work: taking back a file it submitted itself. Offices still do not
+// assign who is in charge -- the dashboard no longer offers it and this
+// refuses it too.
+if(!$isAdmin && !($action === 'delete_document' && isset($_SESSION['office_username']))){
     http_response_code(403);
     echo json_encode(['ok' => false, 'error' => 'Unauthorized']);
     exit();
@@ -464,11 +468,48 @@ if($action === 'delete'){
 if($action === 'delete_document'){
     $docId = intval($_POST['doc_id'] ?? 0);
     if($docId > 0){
-        $docStmt = $conn->prepare("SELECT file_name, original_name, office FROM recommendation_documents WHERE id = ? LIMIT 1");
+        $docStmt = $conn->prepare("SELECT d.file_name, d.original_name, d.office, d.recommendation_id, d.review_status,
+                                          r.status AS recommendation_status
+                                     FROM recommendation_documents d
+                                LEFT JOIN audit_recommendations r ON r.id = d.recommendation_id
+                                    WHERE d.id = ? LIMIT 1");
         $docStmt->bind_param("i", $docId);
         $docStmt->execute();
         $docRow = $docStmt->get_result()->fetch_assoc();
+
         if($docRow){
+            // An office takes back only its own file, and only while the
+            // submission is still open -- office_can_remove_document() in
+            // recommendation_rules.php is the same rule the page asks.
+            $actorUsername = $adminUsername;
+            $actorRole = 'admin';
+
+            if(!$isAdmin){
+                $login = acting_office_login();
+                $actingOffice = $login['office'] ?? '';
+
+                if(!$login || !office_can_remove_document($docRow, $docRow['recommendation_status'], $actingOffice)){
+                    http_response_code(403);
+                    echo json_encode(['ok' => false, 'error' => 'This document can no longer be removed.']);
+                    exit();
+                }
+
+                // The account may have been rejected since the page loaded.
+                $accountStmt = $conn->prepare("SELECT status, role, office FROM users WHERE id = ? LIMIT 1");
+                $accountId = (int) ($login['id'] ?? 0);
+                $accountStmt->bind_param("i", $accountId);
+                $accountStmt->execute();
+                $account = $accountStmt->get_result()->fetch_assoc();
+                if(!$account || user_login_block_reason($account) !== ''){
+                    http_response_code(403);
+                    echo json_encode(['ok' => false, 'error' => 'Your account can no longer sign in.']);
+                    exit();
+                }
+
+                $actorUsername = $login['username'] ?? '';
+                $actorRole = 'office';
+            }
+
             $deleteStmt = $conn->prepare("DELETE FROM recommendation_documents WHERE id = ?");
             $deleteStmt->bind_param("i", $docId);
             $deleteStmt->execute();
@@ -478,7 +519,8 @@ if($action === 'delete_document'){
             }
             forget_pending_onedrive_sync($conn, [$docId]);
 
-            log_audit_event($conn, $adminUsername, 'admin', $docRow['office'], 'document_deleted', 'document', $docId, "Deleted submitted document \"{$docRow['original_name']}\" ({$docRow['office']})");
+            $verb = $isAdmin ? 'Deleted' : 'Withdrew';
+            log_audit_event($conn, $actorUsername, $actorRole, $docRow['office'], 'document_deleted', 'document', $docId, "{$verb} submitted document \"{$docRow['original_name']}\" ({$docRow['office']})", (int) $docRow['recommendation_id']);
         }
     }
     echo json_encode(['ok' => true]);

@@ -283,6 +283,7 @@ function render_office_recommendation_rows($rows, $selectedOffice, $selectedAudi
                     <button type='button' class='row-edit-btn' title='Edit row'><i class='bi bi-pencil'></i> Edit</button>
                     <button type='button' class='row-save-btn' title='Save row'><i class='bi bi-check2'></i> Save</button>
                     <button type='button' class='row-review-btn' title='Review submission' data-review-trigger data-rec-id='{$recId}' data-office='{$recOfficeName}' data-rec-text='{$recText}' data-status='" . htmlspecialchars($row['status'], ENT_QUOTES) . "' data-remarks='{$safeRemarksForReview}' data-review-remarks='{$reviewRemarks}' data-docs='{$docsJson}'><i class='bi bi-clipboard-check'></i> Review</button>
+                    <button type='button' class='row-history-btn' title='Activity for this recommendation' data-history-trigger data-rec-id='{$recId}'><i class='bi bi-clock-history'></i></button>
                     <button type='button' class='row-delete' title='Delete row'><i class='bi bi-trash3'></i></button>
                 </div>
             </td>

@@ -36,9 +36,14 @@ if($selectedArea !== '' && $selectedArea !== AUDIT_AREA_UNASSIGNED
     $selectedArea = '';
 }
 
+$filters = recommendation_filters_from_request($_GET);
+$filtersActive = recommendation_filters_active($filters);
+
 // Three steps for a programmed office -- programmes, then that programme's
 // areas, then the recommendations. Offices without programmes skip the first.
-if(office_has_programs($selectedOffice) && $selectedProgram === ''){
+// A search skips straight to the rows: stopping at the cards would hide the
+// matches behind a click.
+if(!$filtersActive && office_has_programs($selectedOffice) && $selectedProgram === ''){
     echo json_encode([
         'ok' => true,
         'office' => $selectedOffice,
@@ -53,7 +58,7 @@ if(office_has_programs($selectedOffice) && $selectedProgram === ''){
     exit();
 }
 
-if(office_has_areas($selectedOffice) && $selectedArea === ''){
+if(!$filtersActive && office_has_areas($selectedOffice) && $selectedArea === ''){
     echo json_encode([
         'ok' => true,
         'office' => $selectedOffice,
@@ -69,10 +74,10 @@ if(office_has_areas($selectedOffice) && $selectedArea === ''){
     exit();
 }
 
-$recommendations = fetch_office_recommendations($conn, $selectedOffice, $selectedAudit, $selectedArea, $selectedProgram);
+$recommendations = fetch_office_recommendations($conn, $selectedOffice, $selectedAudit, $selectedArea, $selectedProgram, $filters);
 $recIds = array_map(function($row){ return (int) $row['id']; }, $recommendations);
 $docsByRecommendation = fetch_recommendation_documents_map($conn, $recIds);
-$rendered = render_office_recommendation_rows($recommendations, $selectedOffice, $selectedAudit, $docsByRecommendation);
+$rendered = render_office_recommendation_rows($recommendations, $selectedOffice, $selectedAudit, $docsByRecommendation, $filtersActive);
 
 echo json_encode([
     'ok' => true,
@@ -81,6 +86,7 @@ echo json_encode([
     'program' => $selectedProgram,
     'area' => $selectedArea,
     'view' => 'rows',
+    'filtered' => $filtersActive,
     'title' => $selectedArea !== ''
         ? ($selectedProgram !== '' ? $selectedProgram : $selectedOffice) . ' — ' . $selectedArea
         : office_recommendations_title($selectedOffice),

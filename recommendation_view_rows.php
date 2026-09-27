@@ -2,52 +2,170 @@
 
 require_once __DIR__ . "/audit_areas.php";
 require_once __DIR__ . "/recommendation_rules.php";
+require_once __DIR__ . "/in_charge.php";
+
+/**
+ * How wide a full-width row has to be to span the grid. The Office column is
+ * dropped only when a single External office is open; In Charge is always
+ * there.
+ */
+function recommendation_grid_column_count($selectedOffice, $selectedAudit){
+    $showOfficeColumn = $selectedOffice === '' || $selectedAudit !== 'External';
+    // Recommendation, In Charge, Status, Remarks, Documents, Year, Actions.
+    return $showOfficeColumn ? 8 : 7;
+}
+
+/** The dropdown value standing for "blank" -- no year, or nobody in charge. */
+const RECOMMENDATION_FILTER_NONE = '__none__';
+
+/**
+ * The search box and the three dropdowns above the grid, read off a request.
+ * An empty value means no narrowing, so an untouched toolbar changes nothing.
+ */
+function recommendation_filters_from_request($source){
+    return [
+        'search'    => trim((string) ($source['search'] ?? '')),
+        'in_charge' => trim((string) ($source['in_charge'] ?? '')),
+        'status'    => trim((string) ($source['status'] ?? '')),
+        'year'      => trim((string) ($source['year'] ?? '')),
+    ];
+}
+
+/** Whether the toolbar is narrowing anything at all. */
+function recommendation_filters_active($filters){
+    foreach($filters as $value){
+        if(trim((string) $value) !== ''){
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * The In Charge names and years actually in use, so neither dropdown offers a
+ * choice that would come back empty.
+ */
+function recommendation_filter_options($conn, $auditType){
+    $years = [];
+    $names = [];
+    $hasBlankYear = false;
+    $hasUnassigned = false;
+
+    $stmt = $conn->prepare("SELECT year, in_charge FROM audit_recommendations WHERE audit_type = ?");
+    $stmt->bind_param("s", $auditType);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    while($row = $result->fetch_assoc()){
+        $year = trim((string) $row['year']);
+        if($year === ''){
+            $hasBlankYear = true;
+        } elseif(!in_array($year, $years, true)){
+            $years[] = $year;
+        }
+
+        $rowNames = in_charge_decode($row['in_charge'] ?? '');
+        if(empty($rowNames)){
+            $hasUnassigned = true;
+        }
+        foreach($rowNames as $name){
+            if(!in_array($name, $names, true)){
+                $names[] = $name;
+            }
+        }
+    }
+
+    rsort($years);
+    sort($names, SORT_NATURAL | SORT_FLAG_CASE);
+
+    return [
+        'years'      => $years,
+        'blank_year' => $hasBlankYear,
+        'in_charge'  => $names,
+        'unassigned' => $hasUnassigned,
+    ];
+}
 
 /**
  * $selectedArea narrows an office that files its recommendations by area.
  * AUDIT_AREA_UNASSIGNED collects the ones with no area set, so they stay
  * reachable rather than disappearing between the area cards.
+ *
+ * $filters is the toolbar above the grid. A search deliberately reaches across
+ * an office's areas and programmes -- the caller drops those before asking,
+ * rather than making someone open the right card to find what they searched
+ * for.
  */
-function fetch_office_recommendations($conn, $selectedOffice, $selectedAudit, $selectedArea = '', $selectedProgram = ''){
+function fetch_office_recommendations($conn, $selectedOffice, $selectedAudit, $selectedArea = '', $selectedProgram = '', $filters = []){
+    $filters = array_merge(['search' => '', 'in_charge' => '', 'status' => '', 'year' => ''], $filters);
+
+    $where  = ["audit_type = ?"];
+    $types  = "s";
+    $params = [$selectedAudit];
+
+    if($selectedOffice !== ''){
+        $where[]  = "office = ?";
+        $types   .= "s";
+        $params[] = $selectedOffice;
+    }
+
     if($selectedOffice !== '' && $selectedArea !== ''){
+        if($selectedArea === AUDIT_AREA_UNASSIGNED){
+            $where[] = "(area IS NULL OR area = '')";
+        } else {
+            $where[]  = "area = ?";
+            $types   .= "s";
+            $params[] = $selectedArea;
+        }
         // A programmed office needs both: the same area name appears under
         // more than one programme, so area alone would mix them together.
-        $programClause = $selectedProgram !== '' ? " AND program = ?" : "";
-
-        if($selectedArea === AUDIT_AREA_UNASSIGNED){
-            $stmt = $conn->prepare("SELECT * FROM audit_recommendations
-                                     WHERE office = ? AND audit_type = ?
-                                       AND (area IS NULL OR area = ''){$programClause}
-                                  ORDER BY year DESC, id DESC");
-            if($selectedProgram !== ''){
-                $stmt->bind_param("sss", $selectedOffice, $selectedAudit, $selectedProgram);
-            } else {
-                $stmt->bind_param("ss", $selectedOffice, $selectedAudit);
-            }
-        } else {
-            $stmt = $conn->prepare("SELECT * FROM audit_recommendations
-                                     WHERE office = ? AND audit_type = ? AND area = ?{$programClause}
-                                  ORDER BY year DESC, id DESC");
-            if($selectedProgram !== ''){
-                $stmt->bind_param("ssss", $selectedOffice, $selectedAudit, $selectedArea, $selectedProgram);
-            } else {
-                $stmt->bind_param("sss", $selectedOffice, $selectedAudit, $selectedArea);
-            }
+        if($selectedProgram !== ''){
+            $where[]  = "program = ?";
+            $types   .= "s";
+            $params[] = $selectedProgram;
         }
-        $stmt->execute();
-        $result = $stmt->get_result();
-    } elseif($selectedOffice !== ''){
-        $stmt = $conn->prepare("SELECT * FROM audit_recommendations WHERE office = ? AND audit_type = ? ORDER BY year DESC, id DESC");
-        $stmt->bind_param("ss", $selectedOffice, $selectedAudit);
-        $stmt->execute();
-        $result = $stmt->get_result();
-    } else {
-        $stmt = $conn->prepare("SELECT * FROM audit_recommendations WHERE audit_type = ? ORDER BY office ASC, year DESC, id DESC");
-        $stmt->bind_param("s", $selectedAudit);
-        $stmt->execute();
-        $result = $stmt->get_result();
     }
-    return $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
+
+    if($filters['search'] !== ''){
+        $where[] = "(recommendation LIKE ? OR office LIKE ? OR area LIKE ? OR program LIKE ?)";
+        $like = '%' . $filters['search'] . '%';
+        $types .= "ssss";
+        array_push($params, $like, $like, $like, $like);
+    }
+
+    if($filters['status'] !== ''){
+        $where[]  = "status = ?";
+        $types   .= "s";
+        $params[] = $filters['status'];
+    }
+
+    if($filters['year'] !== ''){
+        if($filters['year'] === RECOMMENDATION_FILTER_NONE){
+            $where[] = "(year IS NULL OR year = '')";
+        } else {
+            $where[]  = "year = ?";
+            $types   .= "s";
+            $params[] = $filters['year'];
+        }
+    }
+
+    $order = $selectedOffice === '' ? "office ASC, year DESC, id DESC" : "year DESC, id DESC";
+    $stmt = $conn->prepare("SELECT * FROM audit_recommendations WHERE " . implode(' AND ', $where) . " ORDER BY {$order}");
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+    // in_charge holds a JSON list, so it is matched here rather than in SQL: a
+    // LIKE would also match a name that is only part of a longer one.
+    if($filters['in_charge'] !== ''){
+        $wanted = $filters['in_charge'];
+        $rows = array_values(array_filter($rows, function($row) use ($wanted){
+            $names = in_charge_decode($row['in_charge'] ?? '');
+            return $wanted === RECOMMENDATION_FILTER_NONE ? empty($names) : in_array($wanted, $names, true);
+        }));
+    }
+
+    return $rows;
 }
 
 function fetch_recommendation_documents_map($conn, $recIds){
@@ -68,21 +186,21 @@ function fetch_recommendation_documents_map($conn, $recIds){
     return $docsByRecommendation;
 }
 
-function render_office_recommendation_rows($rows, $selectedOffice, $selectedAudit, $docsByRecommendation = []){
+function render_office_recommendation_rows($rows, $selectedOffice, $selectedAudit, $docsByRecommendation = [], $filtersActive = false){
     $html = "";
     $count = count($rows);
     $statusChoices = ['Pending', 'Submitted', 'Not Submitted', 'Approved', 'Needs Revision', 'Rejected', 'Completed'];
-    // In Charge is an External Audit feature only (BED, College Department);
-    // Internal Audit offices keep the plain Office column even when one
-    // office is selected, same as the "All Offices" view.
+    // A single External office drops the Office column -- every row in that
+    // view belongs to it. Internal Audit keeps the column even with one office
+    // selected, same as the "All Offices" view.
     $showOfficeColumn = $selectedOffice === '' || $selectedAudit !== 'External';
+    $columnCount = recommendation_grid_column_count($selectedOffice, $selectedAudit);
 
     foreach($rows as $row){
         $recId = (int) $row['id'];
         $recYear = htmlspecialchars($row['year'], ENT_QUOTES);
         $recOfficeName = htmlspecialchars($row['office'], ENT_QUOTES);
         $recText = htmlspecialchars($row['recommendation'], ENT_QUOTES);
-        $inCharge = htmlspecialchars($row['in_charge'] ?? '', ENT_QUOTES);
         $reviewRemarks = htmlspecialchars($row['review_remarks'] ?? '', ENT_QUOTES);
 
         // A recommendation passed to more than one office keeps each one's
@@ -109,6 +227,8 @@ function render_office_recommendation_rows($rows, $selectedOffice, $selectedAudi
         } else {
             $remarksCellHtml = "<div class='cell-text' contenteditable='false' data-field='remarks'>{$remarks}</div>";
         }
+        // Same colour the office sees on its own dashboard for this status.
+        $statusChipClass = review_status_chip_info($row['status'])['class'];
         $statusOptions = "";
         foreach($statusChoices as $option){
             $sel = $row['status'] === $option ? " selected" : "";
@@ -137,25 +257,17 @@ function render_office_recommendation_rows($rows, $selectedOffice, $selectedAudi
             $filesHtml = "<button type='button' class='doc-trigger-btn' data-doc-trigger data-rec-text='{$recText}' data-office='{$recOfficeName}' data-docs='{$docsJson}'><i class='bi bi-folder2-open'></i> Documents <span class='doc-count-badge'>{$docCount}</span></button>";
         }
 
-        $leadCells = $showOfficeColumn
-            ? "<td class='cell-readonly'>{$recOfficeName}</td>"
-              . "<td><div class='cell-text grid-rec-cell' contenteditable='false' data-field='recommendation'>{$recText}</div></td>"
-            : "<td><div class='cell-text grid-rec-cell' contenteditable='false' data-field='recommendation'>{$recText}</div></td>"
-              . "<td><div class='incharge-cell' data-field='in_charge' data-json='{$inCharge}'>"
-              . "<div class='incharge-tags'></div>"
-              . "<div class='incharge-add-row'>"
-              . "<div class='incharge-person-row'>"
-              . "<input type='text' class='incharge-person-input' placeholder='Add in charge'>"
-              . "<button type='button' class='incharge-add-btn' title='Add'><i class='bi bi-plus-lg'></i></button>"
-              . "</div></div></div></td>";
+        $leadCells = ($showOfficeColumn ? "<td class='cell-readonly'>{$recOfficeName}</td>" : "")
+            . "<td><div class='cell-text grid-rec-cell' contenteditable='false' data-field='recommendation'>{$recText}</div></td>"
+            . "<td>" . render_in_charge_cell($row['office'], $row['in_charge'] ?? '', 'full') . "</td>";
 
         $html .= "
         <tr data-id='{$recId}' data-mode='view'>
             {$leadCells}
-            <td><select class='cell-select' data-field='status' disabled>{$statusOptions}</select></td>
+            <td><select class='cell-select status-select {$statusChipClass}' data-field='status' disabled>{$statusOptions}</select></td>
             <td>{$remarksCellHtml}</td>
             <td>{$filesHtml}</td>
-            <td><input type='text' class='cell-year' maxlength='4' data-field='year' value='{$recYear}' placeholder='e.g. 2026' disabled></td>
+            <td><input type='text' class='cell-year' maxlength='9' data-field='year' value='{$recYear}' placeholder='2026 or 2026-2027' disabled></td>
             <td>
                 <div class='row-actions'>
                     <button type='button' class='row-edit-btn' title='Edit row'><i class='bi bi-pencil'></i> Edit</button>
@@ -168,8 +280,10 @@ function render_office_recommendation_rows($rows, $selectedOffice, $selectedAudi
         ";
     }
     if($count === 0){
-        $emptyMessage = $selectedOffice === '' ? 'No audit recommendations submitted yet' : 'No recommendations available for this office';
-        $html = "<tr><td colspan='7' class='empty-state'>" . htmlspecialchars($emptyMessage, ENT_QUOTES) . "</td></tr>";
+        $emptyMessage = $filtersActive
+            ? 'No recommendations match this search'
+            : ($selectedOffice === '' ? 'No audit recommendations submitted yet' : 'No recommendations available for this office');
+        $html = "<tr><td colspan='{$columnCount}' class='empty-state'>" . htmlspecialchars($emptyMessage, ENT_QUOTES) . "</td></tr>";
     }
     return ['html' => $html, 'count' => $count];
 }
@@ -213,7 +327,8 @@ function render_program_cards($conn, $office, $auditType){
                 . "</button>";
     }
 
-    return "<tr><td colspan='7' class='area-cell'><div class='prog-grid'>{$cards}</div></td></tr>";
+    $columnCount = recommendation_grid_column_count($office, $auditType);
+    return "<tr><td colspan='{$columnCount}' class='area-cell'><div class='prog-grid'>{$cards}</div></td></tr>";
 }
 
 /** $program is '' for an office whose areas are not grouped, such as BED. */
@@ -244,7 +359,8 @@ function render_area_cards($conn, $office, $auditType, $program = ''){
                 . "</button>";
     }
 
-    return "<tr><td colspan='7' class='area-cell'><div class='area-grid'>{$cards}</div></td></tr>";
+    $columnCount = recommendation_grid_column_count($office, $auditType);
+    return "<tr><td colspan='{$columnCount}' class='area-cell'><div class='area-grid'>{$cards}</div></td></tr>";
 }
 
 /** Heading for the recommendations grid. An empty office means every office. */

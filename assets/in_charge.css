@@ -1,0 +1,41 @@
+/* The In Charge cell and its tick list. Shared by the admin grid (home.php)
+   and an office's own dashboard (office_dashboard.php); the markup comes from
+   render_in_charge_cell() in in_charge.php and from assets/in_charge.js. */
+
+.incharge-cell{min-width:190px;padding:8px 10px}
+.incharge-tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+.incharge-tag{display:inline-flex;align-items:center;gap:6px;background:#eef4ff;color:#2e5fa3;font-size:12px;font-weight:700;padding:4px 6px 4px 10px;border-radius:999px}
+.incharge-tag.incharge-tag-plain{padding:4px 10px}
+.incharge-remove{border:0;background:transparent;color:#2e5fa3;font-size:14px;line-height:1;cursor:pointer;padding:0 2px}
+.incharge-remove:hover{color:#a33831}
+.incharge-empty{font-size:12.5px;color:#94a1b8;font-style:italic}
+.incharge-add-row{display:flex;flex-direction:column;gap:6px}
+.incharge-pick-btn{border:1px solid #c8d4e7;border-radius:5px;background:#f8fbff;color:#2e67b8;font-weight:800;font-size:12px;padding:5px 9px;display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+.incharge-pick-btn:hover{background:#eef4ff;border-color:#316fc4}
+.incharge-person-row{display:flex;gap:4px}
+.incharge-person-input{flex:1;min-width:0;border:1px solid #dbe3ef;border-radius:5px;padding:6px 8px;font-size:12.5px}
+.incharge-add-btn{border:0;border-radius:5px;background:#316fc4;color:#fff;width:30px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.incharge-add-btn:hover{background:#265aa0}
+
+/* Fixed, not absolute: the grid scrolls sideways inside .grid-wrap, which
+   would clip a panel positioned inside the cell. */
+.incharge-panel{position:fixed;z-index:1200;width:min(300px,92vw);background:#fff;border:1px solid #cfd9e8;border-radius:8px;box-shadow:0 14px 34px rgba(15,26,42,.22);display:flex;flex-direction:column;max-height:min(420px,80vh)}
+.incharge-panel-head{padding:10px 14px;border-bottom:1px solid #e6edf7;font-size:12.5px;font-weight:800;color:#26354b}
+.incharge-panel-body{padding:8px 6px;overflow-y:auto;overscroll-behavior:contain;flex:1;min-height:0}
+.incharge-group{padding:8px 8px 4px;font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#8492a8}
+.incharge-note{padding:8px 10px;font-size:12.5px;color:#8492a8;font-style:italic}
+.incharge-option{display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:6px;cursor:pointer;margin:0}
+.incharge-option:hover{background:#f3f8ff}
+.incharge-option.is-locked{cursor:default;opacity:.7}
+.incharge-option.is-locked:hover{background:transparent}
+.incharge-option input:disabled{cursor:default}
+.incharge-option input{width:16px;height:16px;flex-shrink:0;cursor:pointer;accent-color:#316fc4}
+.incharge-option-text{display:flex;flex-direction:column;min-width:0}
+.incharge-option-text strong{font-size:13px;font-weight:700;color:#344156;word-break:break-word}
+.incharge-option-text small{font-size:11px;color:#8492a8}
+.incharge-panel-foot{padding:10px 12px;border-top:1px solid #e6edf7;background:#f8fbff;border-radius:0 0 8px 8px;display:flex;flex-direction:column;gap:7px}
+.incharge-foot-label{font-size:11px;font-weight:800;text-transform:uppercase;color:#8492a8}
+.incharge-done-btn{border:0;border-radius:5px;background:#316fc4;color:#fff;font-weight:800;font-size:12.5px;padding:7px 12px;cursor:pointer}
+.incharge-done-btn:hover{background:#265aa0}
+.incharge-saving{font-size:11.5px;font-weight:700;color:#8492a8}
+.incharge-saving.is-error{color:#a33831}

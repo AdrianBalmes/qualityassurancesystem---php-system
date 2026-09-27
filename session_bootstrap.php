@@ -14,6 +14,37 @@
  *    sign in.
  */
 
+/**
+ * True when the visitor's connection is HTTPS, including when TLS ended at a
+ * proxy in front of this server.
+ *
+ * Cloudflare Tunnel terminates TLS and forwards plain HTTP from cloudflared,
+ * which runs on this machine, so $_SERVER['HTTPS'] is empty for every visitor.
+ * Taken at face value that would strip the Secure flag from the login cookie
+ * and build http:// document links on a site served over https://.
+ *
+ * X-Forwarded-Proto is only believed when the request reaches us from the
+ * loopback address: anything arriving from elsewhere could set that header
+ * itself, while cloudflared cannot be impersonated from off the machine.
+ */
+function app_request_is_https(){
+    if(!empty($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) !== 'off'){
+        return true;
+    }
+
+    $remote = $_SERVER['REMOTE_ADDR'] ?? '';
+    $fromLoopback = in_array($remote, ['127.0.0.1', '::1'], true);
+    $forwarded = strtolower(trim((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')));
+
+    // A proxy may forward a list: "https, http" -- the first entry is the
+    // protocol the visitor actually used.
+    if($forwarded !== '' && strpos($forwarded, ',') !== false){
+        $forwarded = trim(explode(',', $forwarded)[0]);
+    }
+
+    return $fromLoopback && $forwarded === 'https';
+}
+
 if(session_status() === PHP_SESSION_NONE){
     ini_set('session.use_strict_mode', '1');
     ini_set('session.use_only_cookies', '1');
@@ -22,7 +53,7 @@ if(session_status() === PHP_SESSION_NONE){
         'path'     => '/',
         'httponly' => true,
         'samesite' => 'Lax',
-        'secure'   => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+        'secure'   => app_request_is_https(),
     ]);
     session_start();
 }

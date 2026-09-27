@@ -101,6 +101,7 @@ function reg_old($form, $key){
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<link rel="icon" type="image/png" href="assets/sbc-logo.png">
 <meta charset="UTF-8">
 <title>Create Account - SBC Quality Assurance</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -153,7 +154,7 @@ body{background:linear-gradient(135deg,#f6f8fb 0%,#e9effd 100%);font-family:'Int
                 <div class="mb-3" id="departmentBlock">
                     <label class="form-label">Department</label>
                     <select name="office" id="officeSelect" class="form-select">
-                        <option value="">Select your department…</option>
+                        <option value="">Select your department/office</option>
                         <?php foreach($offices as $office): ?>
                             <option value="<?php echo htmlspecialchars($office, ENT_QUOTES); ?>"<?php echo $form['office'] === $office ? ' selected' : ''; ?>>
                                 <?php echo htmlspecialchars($office, ENT_QUOTES); ?>
@@ -166,7 +167,7 @@ body{background:linear-gradient(135deg,#f6f8fb 0%,#e9effd 100%);font-family:'Int
                 <div class="row">
                     <div class="col-md-6 mb-3">
                         <label class="form-label">Username</label>
-                        <input type="text" name="username" class="form-control" maxlength="50" value="<?php echo reg_old($form, 'username'); ?>" placeholder="Choose a username" required>
+                        <input type="text" name="username" class="form-control" maxlength="50" value="<?php echo reg_old($form, 'username'); ?>" placeholder="Type a username" required>
                     </div>
                     <div class="col-md-6 mb-3">
                         <label class="form-label">Phone <span class="text-muted fw-normal">(optional)</span></label>

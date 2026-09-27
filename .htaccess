@@ -25,4 +25,8 @@ DirectoryIndex landing.php index.php
     # Documents go through serve_upload.php / download_document.php. This
     # repeats uploads/.htaccess so one missing file does not expose them.
     RedirectMatch 404 "(?i)/uploads/(?!avatars/[^/]+\.(png|jpe?g|gif|webp)$)"
+    # Command-line maintenance scripts. They refuse to run over the web on
+    # their own; this keeps them from being reachable at all.
+    RedirectMatch 404 "(?i)/tools/"
+    RedirectMatch 404 "(?i)/_bisect/"
 </IfModule>

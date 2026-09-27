@@ -5,6 +5,7 @@ require_once __DIR__ . "/page_background.php";
 require_once __DIR__ . "/profile_columns.php";
 require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/audit_log_helper.php";
+require_once __DIR__ . "/permissions.php";
 
 ensure_user_account_columns($conn);
 
@@ -50,6 +51,10 @@ if(isset($_POST['login'])){
             $_SESSION['admin_full_name'] = $user['full_name'] ?? '';
             $_SESSION['admin_username'] = $user['username'];
             $_SESSION['admin_role']     = $user['role'];
+            // The precise role. enforce_active_account() refreshes it on every
+            // page load, so a change of role lands on the next click.
+            ensure_roles_tables($conn);
+            $_SESSION['admin_role_slug'] = trim((string) ($user['role_slug'] ?? '')) ?: ROLE_QA_HEAD;
             $_SESSION['admin_office']   = $user['office'];
             $_SESSION['admin_user_id']  = $user['id'];
 

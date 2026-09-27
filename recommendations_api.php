@@ -11,19 +11,49 @@ require_once __DIR__ . "/recommendation_rules.php";
 require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/office_statuses.php";
 require_once __DIR__ . "/notifications.php";
+require_once __DIR__ . "/permissions.php";
 header('Content-Type: application/json');
 
 $action = $_POST['action'] ?? '';
-$isAdmin = isset($_SESSION['admin_username']) && $_SESSION['admin_role'] === 'admin';
+$isAdmin = session_is_qa_staff();
 
-// Everything here is the administrator's, bar one thing an office does on its
-// own work: taking back a file it submitted itself. Offices still do not
-// assign who is in charge -- the dashboard no longer offers it and this
-// refuses it too.
+// Everything here is QA staff's, bar one thing an office does on its own work:
+// taking back a file it submitted itself. Offices still do not assign who is
+// in charge -- the dashboard no longer offers it and this refuses it too.
 if(!$isAdmin && !($action === 'delete_document' && isset($_SESSION['office_username']))){
     http_response_code(403);
     echo json_encode(['ok' => false, 'error' => 'Unauthorized']);
     exit();
+}
+
+/**
+ * Which permission each action needs. The gate is per action rather than per
+ * page: a role may be allowed to edit recommendations without being allowed
+ * to delete them, or to review without being able to close one for good.
+ *
+ * delete_document is absent on purpose -- an office reaches it for its own
+ * file, and the QA branch below asks for documents.delete separately.
+ */
+const ACTION_PERMISSIONS = [
+    'add_office_recommendation'  => 'recommendations.manage',
+    'save_office_recommendation' => 'recommendations.manage',
+    'save_in_charge'             => 'recommendations.manage',
+    'list_office_statuses'       => 'recommendations.manage',
+    'add_office_status'          => 'recommendations.manage',
+    'delete'                     => 'recommendations.delete',
+    'review_recommendation'      => 'recommendations.review',
+];
+
+if($isAdmin && isset(ACTION_PERMISSIONS[$action])){
+    require_permission_json($conn, ACTION_PERMISSIONS[$action]);
+}
+if($isAdmin && $action === 'delete_document'){
+    require_permission_json($conn, 'documents.delete');
+}
+// Closing a recommendation for good is its own permission, so a role can be
+// allowed to review without being allowed to end the matter.
+if($isAdmin && $action === 'review_recommendation' && ($_POST['decision'] ?? '') === 'completed'){
+    require_permission_json($conn, 'recommendations.complete');
 }
 
 ensure_review_columns($conn);

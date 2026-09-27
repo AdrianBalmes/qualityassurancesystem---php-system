@@ -135,7 +135,7 @@ function enforce_active_account($conn, $scope = 'auto'){
         return;
     }
 
-    $stmt = $conn->prepare("SELECT status, role, office FROM users WHERE id = ? LIMIT 1");
+    $stmt = $conn->prepare("SELECT status, role, office, role_slug FROM users WHERE id = ? LIMIT 1");
     $stmt->bind_param("i", $userId);
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
@@ -145,7 +145,11 @@ function enforce_active_account($conn, $scope = 'auto'){
         && (($row['role'] === 'admin') === $isAdmin);
 
     if($stillValid){
-        if(!$isAdmin){
+        if($isAdmin){
+            // Re-read each request so a demotion takes effect immediately,
+            // the same way a revoked account does.
+            $_SESSION['admin_role_slug'] = trim((string) ($row['role_slug'] ?? '')) ?: 'qa_head';
+        } else {
             session_scope_follow_office_rename((string) $row['office']);
         }
         return;

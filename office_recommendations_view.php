@@ -6,13 +6,15 @@ require_once __DIR__ . "/audit_areas.php";
 require_once __DIR__ . "/recommendation_view_rows.php";
 require_once __DIR__ . "/office_statuses.php";
 require_once __DIR__ . "/review_columns.php";
+require_once __DIR__ . "/permissions.php";
 header('Content-Type: application/json');
 
-if(!isset($_SESSION['admin_username']) || $_SESSION['admin_role'] !== 'admin'){
+if(!session_is_qa_staff()){
     http_response_code(403);
     echo json_encode(['ok' => false, 'error' => 'Unauthorized']);
     exit();
 }
+require_permission_json($conn, 'recommendations.manage');
 
 ensure_review_columns($conn);
 

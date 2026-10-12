@@ -88,9 +88,14 @@ t_equals('CR/LF is removed, leaving one flat Subject line', array_values(preg_gr
 $mail  = email_build_message($withCreds, 'nobody@example.invalid', "Nobody\r\nBcc: attacker@example.invalid", 'Subject', 'Body');
 $lines = t_header_lines($mail);
 t_ok('name CR/LF does not start a header', !preg_grep('/^Bcc:/i', $lines));
-t_equals('name CR/LF leaves one To line', count(preg_grep('/^To:/', $lines)), 1);
+// The To line exactly, not merely "one To line": a line break that survived
+// would split it or change it, where a count of 1 would stay 1.
+t_equals('name CR/LF is flattened into the one To line',
+    array_values(preg_grep('/^To:/', $lines)), ['To: "NobodyBcc: attacker@example.invalid" <nobody@example.invalid>']);
+// getAllRecipientAddresses() spans To, Cc and Bcc, so a smuggled Bcc recipient
+// would show here. (getBccAddresses() would not be a test of that: this code
+// never calls addBCC(), so it is [] whatever the input.)
 t_equals('name CR/LF leaves one recipient', array_keys($mail->getAllRecipientAddresses()), ['nobody@example.invalid']);
-t_equals('name CR/LF adds no Bcc recipient', $mail->getBccAddresses(), []);
 
 // An address with a line break is not a smuggling route either: PHPMailer
 // refuses it outright, so it never becomes a recipient or a header.

@@ -196,6 +196,12 @@ const EMAIL_EVENTS = [NOTIFY_NEW, NOTIFY_ASSIGNED, NOTIFY_STATUS];
 const EMAIL_ACTION_STATUSES = ['Rejected', 'Needs Revision'];
 
 /**
+ * The most a message body may hold. email_outbox.body is TEXT (65,535 bytes);
+ * this leaves headroom under it rather than sitting on the edge.
+ */
+const EMAIL_BODY_MAX_BYTES = 65000;
+
+/**
  * Whether this event emails at all. New and assigned always do; a status
  * change only when it hands work back.
  */
@@ -225,21 +231,26 @@ function email_render($row, $event, $recipient){
     $text = trim((string) ($row['recommendation'] ?? ''));
     $status = trim((string) ($row['status'] ?? ''));
 
+    // The recipient set is deliberate (a named person, else the owner office
+    // and any office named), but the wording has to fit who is reading. Telling
+    // the owner office's staff they were "put in charge" of their own
+    // recommendation, because another office was added, would be false -- and
+    // so would telling a named person from another office that it was filed
+    // "for your office".
+    $named = array_map('trim', in_charge_decode($row['in_charge'] ?? ''));
+    $recipientName = trim((string) $recipient['name']);
+    $recipientOffice = trim((string) ($recipient['office'] ?? ''));
+    $isNamed = $recipientName !== '' && in_array($recipientName, $named, true);
+    $officeNamed = $recipientOffice !== '' && in_array($recipientOffice, $named, true);
+
     if($event === NOTIFY_STATUS){
         $subject = "{$status}: a {$office} recommendation needs your attention";
         $lead = "A recommendation you are responsible for is now marked {$status}.";
     } elseif($event === NOTIFY_ASSIGNED){
-        // The recipient set is deliberate (a named person, else the office and
-        // the owner), but the wording has to fit who is reading. Telling the
-        // owner office's staff they were "put in charge" of their own
-        // recommendation, because another office was added, would be false.
-        $named = array_map('trim', in_charge_decode($row['in_charge'] ?? ''));
-        $recipientName = trim((string) $recipient['name']);
-        $recipientOffice = trim((string) ($recipient['office'] ?? ''));
-        if($recipientName !== '' && in_array($recipientName, $named, true)){
+        if($isNamed){
             $subject = "You have been put in charge of a {$office} recommendation";
             $lead = "You have been put in charge of the recommendation below.";
-        } elseif($recipientOffice !== '' && in_array($recipientOffice, $named, true)){
+        } elseif($officeNamed){
             $subject = "Your office has been put in charge of a {$office} recommendation";
             $lead = "Your office has been put in charge of the recommendation below.";
         } else {
@@ -248,18 +259,46 @@ function email_render($row, $event, $recipient){
             $lead = "A recommendation for your office has been assigned to {$who}.";
         }
     } else {
-        $subject = "New recommendation for {$office}";
-        $lead = "A new recommendation has been filed for your office.";
+        if($isNamed){
+            $subject = "New {$office} recommendation: you have been put in charge";
+            $lead = "A new recommendation has been filed, and you have been put in charge of it.";
+        } elseif($officeNamed && $recipientOffice !== $office){
+            $subject = "New {$office} recommendation: your office has been put in charge";
+            $lead = "A new recommendation has been filed, and your office has been put in charge of it.";
+        } elseif($recipientOffice === $office){
+            $subject = "New recommendation for {$office}";
+            $lead = "A new recommendation has been filed for your office.";
+        } else {
+            $subject = "New recommendation for {$office}";
+            $lead = "A new recommendation has been filed for {$office}.";
+        }
     }
 
     $name = trim((string) $recipient['name']);
-    $body = "Hello {$name},\n\n{$lead}\n\n"
-          . "Office: {$office}\n"
-          . "Recommendation: " . ($text !== '' ? $text : '(not written out yet)') . "\n\n"
-          . "Open the dashboard to respond:\n{$config['site_url']}/\n\n"
+    $head = "Hello {$name},\n\n{$lead}\n\nOffice: {$office}\nRecommendation: ";
+    $tail = "\n\nOpen the dashboard to respond:\n{$config['site_url']}/\n\n"
           . "--\nSBC Quality Assurance\nThis is an automated message; replies are not read.";
+    $text = $text !== '' ? $text : '(not written out yet)';
 
-    return ['subject' => mb_substr($subject, 0, 200), 'body' => $body];
+    // email_outbox.body is TEXT. A recommendation can fill a TEXT column of
+    // its own, and wrapped in the greeting and footer it no longer fits; under
+    // the server's default sql_mode MySQL then truncates the body without a
+    // word, so the recipient would get a message that stops mid-sentence and
+    // never says so. Cut the recommendation instead, at a word, and say so --
+    // the head and tail (the dashboard link) always survive.
+    $room = EMAIL_BODY_MAX_BYTES - strlen($head) - strlen($tail);
+    if(strlen($text) > $room){
+        $notice = "\n\n[This recommendation is too long for an email and was cut here. Open the dashboard for the full text.]";
+        $cut = mb_strcut($text, 0, max(0, $room - strlen($notice)), 'UTF-8');
+        // Back up to the last whitespace if one is near the end; a text with no
+        // spaces at all is cut where it stands rather than emptied.
+        if(preg_match('/^(.*\s)\S{0,200}$/su', $cut, $m)){
+            $cut = $m[1];
+        }
+        $text = rtrim($cut) . $notice;
+    }
+
+    return ['subject' => mb_substr($subject, 0, 200), 'body' => $head . $text . $tail];
 }
 
 /**
@@ -281,7 +320,45 @@ function email_actor_address($conn, $username){
 }
 
 /**
- * Queue one message per recipient. Returns how many rows were written.
+ * Record that an event should have emailed and there was nobody to send it to.
+ *
+ * Without this the failure is invisible: an office with no approved account, or
+ * whose accounts have no address, is assigned and `email_worker.php status`
+ * reads exactly like "everything was delivered". A 'failed' row with no
+ * recipient_email is the record. It sits in the failed count and the failure
+ * list, where an administrator already looks; last_error is what `status`
+ * prints, so it names what was tried. email_reset_failed() leaves it alone,
+ * because there is no address to retry.
+ */
+function email_record_unreachable($conn, array $row, $event){
+    $entries = in_charge_decode($row['in_charge'] ?? '');
+    $offices = notification_recipients($conn, $row);
+    $office = trim((string) ($row['office'] ?? ''));
+    $recId = isset($row['id']) && (int) $row['id'] > 0 ? (int) $row['id'] : null;
+
+    $error = "Nobody could be reached for the {$event} mail"
+        . ($recId !== null ? " on recommendation #{$recId}" : '') . ". "
+        . "In charge: " . (empty($entries) ? '(nobody named)' : implode(', ', $entries)) . ". "
+        . "Offices tried: " . (empty($offices) ? '(none)' : implode(', ', $offices)) . ". "
+        . "No named person resolves to an approved account with an email address, and neither does "
+        . "any approved account of those offices. Nothing was sent. Add an address to an account, "
+        . "then assign again.";
+    $subject = "NOT SENT: nobody to email about a {$office} recommendation ({$event})";
+
+    $stmt = $conn->prepare("INSERT INTO email_outbox
+        (recommendation_id, recipient_email, recipient_name, recipient_office, event, subject, body, status, attempts, last_error)
+        VALUES (?, '', '', ?, ?, ?, '', 'failed', 0, ?)");
+    $officeColumn = mb_substr($office, 0, 100);
+    $subject = mb_substr($subject, 0, 200);
+    $error = mb_substr($error, 0, 2000);
+    $stmt->bind_param("issss", $recId, $officeColumn, $event, $subject, $error);
+    $stmt->execute();
+}
+
+/**
+ * Queue one message per recipient. Returns how many rows were written --
+ * deliverable ones only: the failed row that records "nobody reachable" is not
+ * a message waiting to go, so it does not count.
  *
  * Never throws. Queueing is a side effect of the user's action, not part of
  * it: this runs after the recommendation has been saved, so an exception here
@@ -304,6 +381,13 @@ function email_notify($conn, array $row, $event, $exceptEmail = ''){
         ensure_email_outbox_table($conn);
         $recipients = email_recipients_for($conn, $row, $exceptEmail);
         if(empty($recipients)){
+            // Empty is not always a failure: someone assigning a recommendation
+            // to themselves is deliberately not mailed (rule 4). Only when
+            // there was nobody at all, actor included, has nobody been reached.
+            if(trim((string) $exceptEmail) === '' || empty(email_recipients_for($conn, $row, ''))){
+                $where = 'recording that nobody could be reached';
+                email_record_unreachable($conn, $row, $event);
+            }
             return 0;
         }
 

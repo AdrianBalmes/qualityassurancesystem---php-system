@@ -211,6 +211,11 @@ Recent failures
 - **sent**: really emailed.
 - **failed**: gave up after 5 attempts. The reason is shown next to it, and the
   same event is in the **Activity Log**.
+- **failed, `(no address)`**: nothing was ever sent, because nobody could be
+  reached. A recommendation was assigned to an office with no approved account,
+  or whose accounts have no email address, and the reason names who was tried.
+  Give one of those accounts an address, then assign the recommendation again.
+  `retry` and `run` leave these rows alone: there is no address to send to.
 
 ## 8. When rows reach `failed`
 
@@ -246,6 +251,11 @@ this one.` Just run the command again in a minute.
 
 ## Good to know
 
+- **The test suite (`tests/`) refuses to run while mail is waiting.**
+  `tests/email_worker_test.php` exercises the same unscoped `run` and `retry` the
+  scheduler uses, so it stops with `ABORTED` if the outbox holds a `pending`,
+  `failed` or `dry-run` row that is not its own, and changes nothing. Deliver them
+  first (step 5). `sent` rows and the `(no address)` records never block it.
 - **Gmail allows roughly 500 messages a day** from one ordinary account. Each
   assignment is one message per recipient, so this is plenty for now. If you ever
   come close, rows will start failing with a quota message, and `retry` will send

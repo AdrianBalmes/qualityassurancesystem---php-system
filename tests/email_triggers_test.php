@@ -109,6 +109,18 @@ function t_trigger_recipients($conn){
     return $emails;
 }
 
+/** Who was mailed for one event, sorted. */
+function t_trigger_recipients_for($conn, $event){
+    $emails = [];
+    foreach(t_trigger_outbox($conn) as $mail){
+        if($mail['event'] === $event){
+            $emails[] = $mail['recipient_email'];
+        }
+    }
+    sort($emails);
+    return $emails;
+}
+
 /** The distinct events queued, so one-event-per-save can be asserted. */
 function t_trigger_events($conn){
     return array_values(array_unique(array_column(t_trigger_outbox($conn), 'event')));
@@ -211,10 +223,46 @@ foreach(t_trigger_outbox($conn) as $mail){
 t_ok('the added office is told it was put in charge', strpos($subjects[$frank] ?? '', 'Your office has been put in charge') === 0);
 t_ok('the owner office is not told it was put in charge', strpos($subjects[$dave] ?? 'put in charge', 'put in charge') === false);
 
-// One event per save: a status change and a new name in the same save is one
-// message to each person, not two.
+// A status change and a new name in the same save are two different facts --
+// "this is now Rejected" and "you have been put in charge" -- so a person who
+// is both gets both. The assignment mail used to be suppressed whenever the
+// status mail had gone, which was only harmless while both reached the same
+// people.
 t_trigger_clear_outbox($conn);
 t_save($text, 'Rejected', ['Dave Tester', 'Erin Tester', T_TRIGGER_OFFICE_B, 'Frank Tester']);
-t_equals('a status change plus a new name sent only the status mail', t_trigger_events($conn), [NOTIFY_STATUS]);
+t_equals('a status change plus a new name sent both mails', t_trigger_events($conn), [NOTIFY_STATUS, NOTIFY_ASSIGNED]);
+t_equals('the status mail reached everyone named', t_trigger_recipients_for($conn, NOTIFY_STATUS), [$dave, $erin, $frank]);
+t_equals('the assignment mail reached only the person added', t_trigger_recipients_for($conn, NOTIFY_ASSIGNED), [$frank]);
+
+// The case the old gate lost. A named person is already in charge; the save
+// changes the status AND puts an office in charge. The status mail resolves
+// from the whole list, where the named person takes precedence over any office,
+// so it reaches Dave alone -- and the added office must still be told. Here the
+// added name is an office, not a person who happens to resolve.
+t_save($text, 'Approved', ['Dave Tester']);
+t_trigger_clear_outbox($conn);
+t_save($text, 'Needs Revision', ['Dave Tester', T_TRIGGER_OFFICE_B]);
+t_equals('the status mail went to the named person alone', t_trigger_recipients_for($conn, NOTIFY_STATUS), [$dave]);
+t_ok('and the added office was still told it was put in charge', in_array($frank, t_trigger_recipients_for($conn, NOTIFY_ASSIGNED), true));
+$officeMail = null;
+foreach(t_trigger_outbox($conn) as $mail){
+    if($mail['event'] === NOTIFY_ASSIGNED && $mail['recipient_email'] === $frank){
+        $officeMail = $mail;
+    }
+}
+t_ok('worded as its office being put in charge', $officeMail !== null && strpos($officeMail['subject'], 'Your office has been put in charge') === 0);
+t_equals('both events were queued', t_trigger_events($conn), [NOTIFY_STATUS, NOTIFY_ASSIGNED]);
+
+// The same save when the text is written for the first time: the new mail goes
+// to the named person, and the added office still hears of it.
+t_trigger_clear_outbox($conn);
+$stmt = $conn->prepare("UPDATE audit_recommendations SET recommendation = '', in_charge = ? WHERE id = ?");
+$davesOnly = json_encode(['Dave Tester']);
+$rec = T_TRIGGER_REC;
+$stmt->bind_param("si", $davesOnly, $rec);
+$stmt->execute();
+t_save($text, 'Pending', ['Dave Tester', T_TRIGGER_OFFICE_B]);
+t_equals('first text plus an added office: the new-recommendation mail reached the named person', t_trigger_recipients_for($conn, NOTIFY_NEW), [$dave]);
+t_ok('and the added office was told it was put in charge', in_array($frank, t_trigger_recipients_for($conn, NOTIFY_ASSIGNED), true));
 
 t_summary();

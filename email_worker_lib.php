@@ -143,13 +143,19 @@ function email_process_pending($conn, array $config, ?array $onlyIds = null){
  * 'failed' ones, as od_cmd_run does for uploads, and the 'dry-run' ones, which
  * were drained by a rehearsal and emailed to nobody. A 'sent' row is never
  * revived, or its recipient would get the message twice.
+ *
+ * A row with no recipient_email is never revived either. That is the record
+ * email_record_unreachable() writes when nobody could be reached; reviving it
+ * would only fail again on the empty address, burn its attempts and file a
+ * second failure for the same thing.
+ *
  * $onlyIds limits it to those rows; null revives all of them.
  */
 function email_reset_failed($conn, ?array $onlyIds = null){
     ensure_email_outbox_table($conn);
 
     if($onlyIds === null){
-        mysqli_query($conn, "UPDATE email_outbox SET status='pending', attempts=0, sent_at=NULL, last_error=NULL WHERE status IN ('failed','dry-run')");
+        mysqli_query($conn, "UPDATE email_outbox SET status='pending', attempts=0, sent_at=NULL, last_error=NULL WHERE status IN ('failed','dry-run') AND recipient_email <> ''");
         return mysqli_affected_rows($conn);
     }
 
@@ -158,7 +164,7 @@ function email_reset_failed($conn, ?array $onlyIds = null){
         return 0;
     }
     $marks = implode(',', array_fill(0, count($ids), '?'));
-    $stmt = $conn->prepare("UPDATE email_outbox SET status='pending', attempts=0, sent_at=NULL, last_error=NULL WHERE status IN ('failed','dry-run') AND id IN ({$marks})");
+    $stmt = $conn->prepare("UPDATE email_outbox SET status='pending', attempts=0, sent_at=NULL, last_error=NULL WHERE status IN ('failed','dry-run') AND recipient_email <> '' AND id IN ({$marks})");
     $stmt->bind_param(str_repeat('i', count($ids)), ...$ids);
     $stmt->execute();
     return $stmt->affected_rows;

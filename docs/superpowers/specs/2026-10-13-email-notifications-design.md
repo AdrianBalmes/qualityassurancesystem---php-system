@@ -54,6 +54,16 @@ can see that it failed rather than assuming it arrived.
 | Status to Approved / Completed / Submitted | yes | no |
 | Review feedback with no status change | yes | no |
 
+The mail for the event and the mail for an assignment are decided separately.
+A save that changes the status to Rejected or Needs Revision **and** puts
+somebody in charge sends both, so a person who is both a recipient of the status
+mail and newly added receives two messages, about two different facts. The
+assignment mail is resolved from only the names that were added, the event mail
+from the whole `in_charge` list, and because a named person takes precedence
+over an office the two can reach different people; suppressing one whenever the
+other fired would silently drop the assignment for an office added alongside a
+status change.
+
 ### Resolving recipients
 
 1. Take the names in `in_charge` that resolve to an **approved user account**,
@@ -78,6 +88,18 @@ assignments fall through to the office, and the outbox records that the named
 person had no address. Silent non-delivery is the failure mode this whole
 design exists to avoid.
 
+What the outbox records, as built: when an event should email and **nobody at
+all** can be reached -- no named person with an address, and no approved account
+with an address in the owning office or any office named -- one row is written
+with an empty `recipient_email`, `status = 'failed'` and no attempts. Its
+`last_error` names the `in_charge` entries and the offices that were tried, and
+the row appears in `status` with the other failures. It is not a queued message
+and is never retried (`retry` and `run <id>` skip a row with no address). Nothing
+is recorded when the only candidate was the person who made the change, because
+excluding them is deliberate (rule 4). A named person with no address whose
+office *does* have reachable accounts is not recorded separately: the mail goes
+to the office, and its `recipient_office` shows where it went.
+
 ## The outbox
 
 `email_outbox`, created by `ensure_email_outbox_table()` — self-healing on
@@ -93,7 +115,7 @@ recipient_office  varchar(100)
 event             varchar(30)
 subject           varchar(200)
 body              text
-status            varchar(20)   pending | sent | failed
+status            varchar(20)   pending | dry-run | sent | failed
 attempts          int, default 0
 last_error        text
 created_at        datetime
@@ -103,6 +125,16 @@ KEY status_created (status, created_at)
 
 **One row per recipient**, not per event, so one undeliverable address cannot
 block the others.
+
+**`dry-run` is a status of its own, never `sent`.** Under `EMAIL_DRY_RUN` nothing
+leaves the machine, so a row drained by a rehearsal is marked `dry-run` with no
+`sent_at`. Marking it `sent` would put a delivery into the record that never
+happened, and strand the mail: a row already `sent` is never sent again.
+`onedrive_sync.php` makes the same split between `dry-run` and `uploaded`. `status`
+counts `dry-run` rows on their own line and says they were not emailed.
+
+A row with an empty `recipient_email` is the record of "nobody reachable"
+described above, not a message.
 
 **Subject and body are rendered when queued, not when sent.** This matches the
 reasoning already recorded in [notifications.php](../../../notifications.php):
@@ -116,10 +148,17 @@ recommendation has changed by the time the mail goes out.
 so there is one pattern to learn:
 
 - **`run`** — send pending rows, oldest first, at most `EMAIL_BATCH_SIZE`
+- **`run <id>`** — send that one row, for the case of a bad address that has
+  since been fixed. It revives the row first if it is `failed` or `dry-run`, and
+  refuses a row that was already `sent`, an unknown id, and a row with no address.
+  Only the named row is touched, whatever else is pending.
 - **`status`** — counts by state, and each failure with its `last_error`
-- **`retry`** — reset `failed` rows to `pending`
+- **`retry`** — put back every row that was not actually delivered, which is
+  `failed` **and** `dry-run`, then run. A `sent` row is never put back, or its
+  recipient would be mailed twice, and neither is a row with no address.
 
-On success: `status = 'sent'`, `sent_at` stamped. On failure: `attempts`
+On success: `status = 'sent'`, `sent_at` stamped -- except under a dry run, where
+it is `dry-run` and `sent_at` stays empty. On failure: `attempts`
 increments and `last_error` is recorded; the row stays `pending` until
 `attempts` reaches `EMAIL_MAX_ATTEMPTS`, then becomes `failed` so it stops
 consuming attempts and appears in `status`.
@@ -152,7 +191,13 @@ EMAIL_APP_PASSWORD=
 EMAIL_FROM_NAME=SBC Quality Assurance   # the From address is EMAIL_USERNAME
 EMAIL_MAX_ATTEMPTS=5
 EMAIL_BATCH_SIZE=20
+EMAIL_SITE_URL=https://sbc-quality-assurance.com   # the dashboard link in every message
 ```
+
+`EMAIL_SITE_URL` is the tenth key. The message has to link to the dashboard (see
+below), and a worker running from Task Scheduler has no request to take the
+address from, so the link needs a setting of its own. The default is the site's
+address, and a trailing slash is dropped.
 
 `EMAIL_DRY_RUN` exercises triggers, recipient resolution and the queue with no
 credentials and nothing leaving the machine, exactly as `ONEDRIVE_DRY_RUN` did
@@ -162,6 +207,12 @@ for uploads.
 
 Who it is for, the recommendation text, what happened ("assigned to you",
 "needs revision"), and a link to the dashboard.
+
+The wording fits who is reading: a named person is told they were put in
+charge, an office that was named is told its office was, and the owning office is
+told the recommendation was filed for it -- never "put in charge of" its own.
+A very long recommendation is cut at a word, with a visible note, rather than
+left for the database to truncate; the dashboard link always survives.
 
 Deliberately excluded: compliance responses, review remarks, and document
 names. On a recommendation shared between offices, including them would send

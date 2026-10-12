@@ -467,16 +467,22 @@ if($action === 'save_office_recommendation'){
             'in_charge'      => $inCharge,
             'status'         => $status,
         ];
-        $queued = 0;
         if($wasBlank && $recommendation !== ''){
-            $queued = email_notify($conn, $emailRow, NOTIFY_NEW, $actorAddress);
+            email_notify($conn, $emailRow, NOTIFY_NEW, $actorAddress);
         } elseif($beforeRow['status'] !== $status){
-            $queued = email_notify($conn, $emailRow, NOTIFY_STATUS, $actorAddress);
+            email_notify($conn, $emailRow, NOTIFY_STATUS, $actorAddress);
         }
-        // Whoever this save put in charge is told they have the task -- unless
-        // the event above already mailed them about the same recommendation.
+        // Whoever this save put in charge is told they have the task, whether
+        // or not the event above also mailed. The two do not reach the same
+        // people: the event mail resolves from the whole in_charge list, where
+        // a named person takes precedence over any office, while this one
+        // resolves from only the added names. Gating on "the event already
+        // mailed someone" lost the assignment outright when a status change
+        // went to an existing named person and an office was added alongside.
+        // A person who is both gets two mails about two different facts, which
+        // is accurate; silence is the failure this feature exists to prevent.
         $addedNames = array_values(array_diff(in_charge_decode($inCharge), in_charge_decode($beforeRow['in_charge'] ?? '')));
-        if($queued === 0 && !empty($addedNames)){
+        if(!empty($addedNames)){
             email_notify($conn, [
                 'id'             => $id,
                 'office'         => $beforeRow['office'],

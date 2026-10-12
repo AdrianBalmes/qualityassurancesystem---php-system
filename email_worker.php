@@ -95,8 +95,10 @@ switch($command){
         if(!empty($state['errors'])){
             echo "\nRecent failures\n";
             foreach($state['errors'] as $row){
+                // A blank address is the record that nobody could be reached.
                 printf("  #%-5d %-34s attempts %d: %s\n",
-                    $row['id'], $row['recipient_email'], $row['attempts'], $row['last_error']);
+                    $row['id'], $row['recipient_email'] !== '' ? $row['recipient_email'] : '(no address)',
+                    $row['attempts'], $row['last_error']);
             }
         }
         break;
@@ -111,7 +113,7 @@ switch($command){
                 exit("'{$argv[2]}' is not a row id. Use: run <id>\n");
             }
             $id = (int) $argv[2];
-            $stmt = $conn->prepare("SELECT status FROM email_outbox WHERE id = ?");
+            $stmt = $conn->prepare("SELECT status, recipient_email FROM email_outbox WHERE id = ?");
             $stmt->bind_param("i", $id);
             $stmt->execute();
             $found = $stmt->get_result()->fetch_assoc();
@@ -120,6 +122,10 @@ switch($command){
             }
             if($found['status'] === 'sent'){
                 exit("Row #{$id} was already sent; not sending it again.\n");
+            }
+            if(trim((string) $found['recipient_email']) === ''){
+                exit("Row #{$id} records that nobody could be reached, so it has no address to send to. "
+                    . "Add an address to the account, then assign the recommendation again.\n");
             }
             $onlyIds = [$id];
 

@@ -94,13 +94,14 @@ email_worker.php run
 You should see something like:
 
 ```
-sent 1, failed 0 (dry run: nothing left the machine)
+DRY RUN: 1 row(s) marked dry-run, NOT emailed (nothing left the machine); failed 0
 ```
 
 That confirms the whole chain works: the assignment queued a row, and the
-worker emptied it. **Nothing was emailed.** A dry run marks each row `sent`
-without sending it, so rows drained this way will never be emailed later. That
-is the point of rehearsing, but do it before real assignments pile up.
+worker processed it. **Nothing was emailed.** A dry run marks each row
+`dry-run`, never `sent`, so the record does not claim a delivery that did not
+happen. The row is not lost either: once you have switched to live (step 5),
+`email_worker.php retry` puts every `dry-run` row back in the queue and sends it.
 
 ## 5. Switch it on for real
 
@@ -110,6 +111,10 @@ Change these two lines in `.env`:
 EMAIL_ENABLED=true
 EMAIL_DRY_RUN=false
 ```
+
+If you rehearsed first, `email_worker.php status` will show a number against
+`dry-run`: those messages were never emailed. Run `email_worker.php retry` to
+send them (see step 8).
 
 To test, assign a recommendation to an office whose recipient is an address you
 can check, then run `email_worker.php run` and look for `sent 1, failed 0`.
@@ -124,15 +129,16 @@ failed when it was never tried. Fix `.env` and run it again.
 
 | `EMAIL_ENABLED` | `EMAIL_DRY_RUN` | What happens |
 |---|---|---|
-| `false` | `true` | **The state this ships in.** Assignments still queue rows. Nothing is sent. Until the worker runs, rows simply wait. If the worker does run, it empties the queue as a rehearsal: rows become `sent`, but no email leaves the PC. |
+| `false` | `true` | **The state this ships in.** Assignments still queue rows. Nothing is sent. Until the worker runs, rows simply wait. If the worker does run, it processes the queue as a rehearsal: rows become `dry-run` (not `sent`) and no email leaves the PC. They can be sent later with `retry`. |
 | `true` | `false` | **Live.** Assignments queue rows and the worker sends them. |
 | `true` | `true` | Same as the first row: dry run wins, nothing is sent. |
 | `false` | `false` | **Fully off.** Assignments queue nothing and the worker does nothing. Mail for assignments made in this state cannot be recovered later, because it was never queued. |
 
-So with the shipped settings no mail is lost, but only because the worker has
-not been scheduled. If you register step 6 before switching to the second row,
-the worker will drain the queue as a rehearsal and those messages are gone.
-Switch the settings first, then register the task.
+So with the shipped settings no mail is lost. If you register step 6 before
+switching to the second row, the worker will move every queued row to `dry-run`
+every 5 minutes and nobody is emailed. Those rows are not gone: after you switch
+to the second row, `email_worker.php retry` sends them. But nobody is told in the
+meantime, so switch the settings first, then register the task.
 
 ## 6. Register the scheduled task (required, not yet done)
 
@@ -169,7 +175,8 @@ Things you may see there, none of them a problem:
 
 - `Another email worker run is already in progress; skipping this one.` A
   previous run was still going. The next run picks up whatever it left.
-- `sent 0, failed 0` is an empty queue.
+- `sent 0, failed 0` is an empty queue. A line starting `DRY RUN:` means the
+  settings are still on rehearsal and nothing is being emailed (step 5).
 
 One thing that is a problem:
 
@@ -188,6 +195,7 @@ shows how many rows are in each state:
 ```
 Email outbox
   pending  0
+  dry-run  0
   sent     14
   failed   1
 
@@ -197,7 +205,10 @@ Recent failures
 
 - **pending**: waiting to go out. A few is normal; a number that keeps growing
   means the worker is not running (step 6) or cannot reach Gmail.
-- **sent**: done.
+- **dry-run**: processed while `EMAIL_DRY_RUN` was on. **These were never
+  emailed.** A number here means people are waiting for a message they have not
+  had; `retry` (step 8) sends them once the settings are live.
+- **sent**: really emailed.
 - **failed**: gave up after 5 attempts. The reason is shown next to it, and the
   same event is in the **Activity Log**.
 
@@ -218,11 +229,14 @@ was already sent (so nobody gets the same email twice), and tells you if the
 number does not exist.
 
 **A general problem** (Gmail was unreachable, or the app password was wrong and
-you have fixed it): put every failed row back and send them all:
+you have fixed it), **or rows sitting in `dry-run`**: put every row that was not
+actually delivered (`failed` and `dry-run`) back and send them all:
 
 ```
 email_worker.php retry
 ```
+
+Rows that were really `sent` are never put back, so nobody gets a message twice.
 
 `retry` and `run` both wait their turn: if the scheduled run is working at that
 moment, you will see `Another email worker run is already in progress; skipping

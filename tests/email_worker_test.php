@@ -24,7 +24,7 @@ ensure_audit_log_table($conn);
 
 // email_process_pending() drains EVERY pending row and email_reset_failed()
 // revives EVERY failed one: that is their job. Against the live ems_db a
-// queued row that is not ours would be marked sent (dry run) without ever
+// queued row that is not ours would be marked dry-run (never emailed) without ever
 // being delivered -- the silent non-delivery this feature exists to prevent.
 // So refuse to start while anything else is waiting, and touch nothing. Every
 // call below also passes its own row ids, which covers the other window: a
@@ -37,7 +37,7 @@ $foreign->execute();
 $foreignCount = (int) $foreign->get_result()->fetch_assoc()['c'];
 if($foreignCount > 0){
     fwrite(STDERR, "ABORTED: {$foreignCount} pending or failed email_outbox row(s) are not this test's. "
-        . "Running would send them as a dry run (marking them sent undelivered) or revive them. "
+        . "Running would dry-run them (marking them undelivered) or revive them. "
         . "Nothing was changed. Let the worker drain the queue, then run this again.\n");
     exit(2);
 }
@@ -128,13 +128,28 @@ function t_clear_own($conn){
 $base = array_merge(email_config(), ['enabled' => true, 'batch_size' => 10]);
 $dry = array_merge($base, ['dry_run' => true]);
 
-// A dry run drains the queue and marks the row sent.
+// A dry run drains the queue but must never claim delivery: nothing left the
+// machine, so the row is marked 'dry-run', carries no send time, and is counted
+// apart from real sends. Marking it 'sent' would make the audit trail say the
+// opposite of what happened.
 $id = t_queue_row($conn);
 $result = t_process($conn, $dry);
-t_equals('dry run sent one', $result['sent'], 1);
+t_equals('dry run processed one', $result['dry_run'], 1);
+t_equals('dry run reports no real send', $result['sent'], 0);
 $row = t_fetch_row($conn, $id);
-t_equals('marked sent', $row['status'], 'sent');
-t_ok('sent_at stamped', !empty($row['sent_at']));
+t_equals('marked dry-run', $row['status'], 'dry-run');
+t_ok('never marked sent', $row['status'] !== 'sent');
+t_equals('no send time stamped', $row['sent_at'], null);
+t_equals('status reports the dry-run row', email_queue_status($conn)['counts']['dry-run'] ?? 0, 1);
+
+// Those rows were never delivered, so they must be able to go back in the queue.
+t_equals('a dry-run row can be revived', email_reset_failed($conn, [$id]), 1);
+$row = t_fetch_row($conn, $id);
+t_equals('revived to pending', $row['status'], 'pending');
+t_equals('revival leaves no send time', $row['sent_at'], null);
+t_equals('revival leaves no error', $row['last_error'], null);
+$result = t_process($conn, $dry);
+t_equals('and it can be dry-run again', $result['dry_run'], 1);
 
 // A missing .env is a configuration fault, not a per-row one. If it counted as
 // an attempt, one blank credential would burn every attempt on every queued row
@@ -145,7 +160,7 @@ $noCredentials = array_merge($base, ['dry_run' => false, 'username' => '', 'pass
 for($pass = 1; $pass <= 2; $pass++){
     $result = t_process($conn, $noCredentials);
     $row = t_fetch_row($conn, $id);
-    t_equals("missing credentials, pass {$pass}: nothing sent or failed", [$result['sent'], $result['failed']], [0, 0]);
+    t_equals("missing credentials, pass {$pass}: nothing sent or failed", [$result['sent'], $result['dry_run'], $result['failed']], [0, 0, 0]);
     t_ok("missing credentials, pass {$pass}: the run reports why it stopped",
          !empty($result['halted']) && strpos($result['halted'], 'EMAIL_USERNAME') !== false);
     t_equals("missing credentials, pass {$pass}: still pending", $row['status'], 'pending');
@@ -183,7 +198,7 @@ t_ok('permanent failure reaches the Activity Log', (int) $stmt->get_result()->fe
 
 // A failed row is not retried until retry resets it.
 $before = t_process($conn, $unreachable);
-t_equals('failed rows are left alone', $before['sent'] + $before['failed'], 0);
+t_equals('failed rows are left alone', $before['sent'] + $before['dry_run'] + $before['failed'], 0);
 t_equals('retry reports one row revived', email_reset_failed($conn, t_own_ids($conn)), 1);
 $row = t_fetch_row($conn, $id);
 t_equals('retry puts it back', $row['status'], 'pending');
@@ -196,7 +211,7 @@ t_equals('the recommendation exists before', (int) mysqli_query($conn, "SELECT C
 mysqli_query($conn, "DELETE FROM audit_recommendations WHERE id = " . T_WORKER_REC);
 t_equals('the recommendation is gone', (int) mysqli_query($conn, "SELECT COUNT(*) c FROM audit_recommendations WHERE id = " . T_WORKER_REC)->fetch_assoc()['c'], 0);
 $result = t_process($conn, $dry);
-t_equals('sends without the recommendation row', $result['sent'], 1);
+t_equals('sends without the recommendation row', $result['dry_run'], 1);
 
 // A row with no recommendation and no body (both columns are nullable) must
 // neither crash the batch nor be logged against recommendation 0.
@@ -210,7 +225,7 @@ $stmt->execute();
 $nullId = $conn->insert_id;
 
 $result = t_process($conn, $dry);
-t_equals('a NULL body and NULL recommendation still send', $result['sent'], 1);
+t_equals('a NULL body and NULL recommendation still send', $result['dry_run'], 1);
 
 mysqli_query($conn, "UPDATE email_outbox SET status='pending' WHERE id = {$nullId}");
 $giveUpAtOnce = array_merge($unreachable, ['max_attempts' => 1]);
@@ -230,16 +245,25 @@ t_clear_own($conn);
 $a = t_queue_row($conn);
 $b = t_queue_row($conn);
 $result = email_process_pending($conn, $dry, [$a]);
-t_equals('a scoped run sends only the named row', $result['sent'], 1);
-t_equals('the named row is sent', t_fetch_row($conn, $a)['status'], 'sent');
+t_equals('a scoped run processes only the named row', $result['dry_run'], 1);
+t_equals('the named row is marked dry-run', t_fetch_row($conn, $a)['status'], 'dry-run');
 t_equals('the other row is left pending', t_fetch_row($conn, $b)['status'], 'pending');
 $result = email_process_pending($conn, $dry, []);
-t_equals('an empty scope processes nothing', $result['sent'], 0);
+t_equals('an empty scope processes nothing', $result['sent'] + $result['dry_run'], 0);
 t_equals('and leaves the row pending', t_fetch_row($conn, $b)['status'], 'pending');
 mysqli_query($conn, "UPDATE email_outbox SET status='failed', attempts=5 WHERE id IN ({$a}, {$b})");
 t_equals('a scoped reset revives only the named row', email_reset_failed($conn, [$b]), 1);
 t_equals('the named row is pending again', t_fetch_row($conn, $b)['status'], 'pending');
 t_equals('the other failed row stays failed', t_fetch_row($conn, $a)['status'], 'failed');
+
+// The same scoped revival covers dry-run rows, and leaves a genuinely sent row
+// alone: a real delivery must never be put back to go out twice.
+mysqli_query($conn, "UPDATE email_outbox SET status='dry-run' WHERE id = {$a}");
+mysqli_query($conn, "UPDATE email_outbox SET status='sent', sent_at=NOW() WHERE id = {$b}");
+t_equals('a scoped reset ignores a sent row', email_reset_failed($conn, [$b]), 0);
+t_equals('the sent row stays sent', t_fetch_row($conn, $b)['status'], 'sent');
+t_equals('a scoped reset revives a dry-run row', email_reset_failed($conn, [$a]), 1);
+t_equals('the dry-run row is pending again', t_fetch_row($conn, $a)['status'], 'pending');
 
 // One row whose database work throws must not end the batch. Forced honestly:
 // the first row already holds the largest attempts value an int(11) column can

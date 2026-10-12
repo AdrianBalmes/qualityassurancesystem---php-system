@@ -37,16 +37,18 @@ function email_config_fault(array $config){
  * (the test, or an administrator resending one) cannot sweep up a row that
  * arrives while it runs.
  *
- * Returns 'halted' (a message, or null) when the run stopped before touching
- * any row because of a configuration fault, and 'errored' for rows whose
- * database work threw. An errored row is skipped, not allowed to end the batch.
+ * Returns 'sent' (really delivered) and 'dry_run' (processed under a dry run,
+ * delivered to nobody) separately, so no caller can read one as the other.
+ * 'halted' is a message, or null, when the run stopped before touching any row
+ * because of a configuration fault; 'errored' counts rows whose database work
+ * threw. An errored row is skipped, not allowed to end the batch.
  */
 function email_process_pending($conn, array $config, ?array $onlyIds = null){
     ensure_email_outbox_table($conn);
 
     $fault = email_config_fault($config);
     if($fault !== null){
-        return ['sent' => 0, 'failed' => 0, 'errored' => 0, 'halted' => $fault];
+        return ['sent' => 0, 'dry_run' => 0, 'failed' => 0, 'errored' => 0, 'halted' => $fault];
     }
 
     $rows = [];
@@ -70,6 +72,7 @@ function email_process_pending($conn, array $config, ?array $onlyIds = null){
     }
 
     $sent = 0;
+    $dryRun = 0;
     $failed = 0;
     $errored = 0;
     foreach($rows as $row){
@@ -85,6 +88,21 @@ function email_process_pending($conn, array $config, ?array $onlyIds = null){
                 // after the message has gone. If this UPDATE fails the row
                 // stays pending and is sent again -- a duplicate email is
                 // better than the loss that marking it first would risk.
+                //
+                // A dry run reaches here too, because email_send() reports it
+                // as ok. Nothing left the machine, so the row is 'dry-run' and
+                // has no send time -- never 'sent', which would put a false
+                // delivery into the record and strand the mail. Same split as
+                // onedrive_sync.php ('dry-run' versus 'uploaded'). The retry
+                // command puts these rows back in the queue.
+                if(!empty($config['dry_run'])){
+                    $update = $conn->prepare("UPDATE email_outbox SET status='dry-run', sent_at=NULL, last_error=NULL WHERE id = ?");
+                    $update->bind_param("i", $row['id']);
+                    $update->execute();
+                    $dryRun++;
+                    continue;
+                }
+
                 $update = $conn->prepare("UPDATE email_outbox SET status='sent', sent_at=NOW(), last_error=NULL WHERE id = ?");
                 $update->bind_param("i", $row['id']);
                 $update->execute();
@@ -117,18 +135,21 @@ function email_process_pending($conn, array $config, ?array $onlyIds = null){
         }
     }
 
-    return ['sent' => $sent, 'failed' => $failed, 'errored' => $errored, 'halted' => null];
+    return ['sent' => $sent, 'dry_run' => $dryRun, 'failed' => $failed, 'errored' => $errored, 'halted' => null];
 }
 
 /**
- * Put failed rows back in the queue, as od_cmd_run does for uploads.
- * $onlyIds limits it to those rows; null revives every failed row.
+ * Put back in the queue every row that was not actually delivered: the
+ * 'failed' ones, as od_cmd_run does for uploads, and the 'dry-run' ones, which
+ * were drained by a rehearsal and emailed to nobody. A 'sent' row is never
+ * revived, or its recipient would get the message twice.
+ * $onlyIds limits it to those rows; null revives all of them.
  */
 function email_reset_failed($conn, ?array $onlyIds = null){
     ensure_email_outbox_table($conn);
 
     if($onlyIds === null){
-        mysqli_query($conn, "UPDATE email_outbox SET status='pending', attempts=0, last_error=NULL WHERE status='failed'");
+        mysqli_query($conn, "UPDATE email_outbox SET status='pending', attempts=0, sent_at=NULL, last_error=NULL WHERE status IN ('failed','dry-run')");
         return mysqli_affected_rows($conn);
     }
 
@@ -137,7 +158,7 @@ function email_reset_failed($conn, ?array $onlyIds = null){
         return 0;
     }
     $marks = implode(',', array_fill(0, count($ids), '?'));
-    $stmt = $conn->prepare("UPDATE email_outbox SET status='pending', attempts=0, last_error=NULL WHERE status='failed' AND id IN ({$marks})");
+    $stmt = $conn->prepare("UPDATE email_outbox SET status='pending', attempts=0, sent_at=NULL, last_error=NULL WHERE status IN ('failed','dry-run') AND id IN ({$marks})");
     $stmt->bind_param(str_repeat('i', count($ids)), ...$ids);
     $stmt->execute();
     return $stmt->affected_rows;

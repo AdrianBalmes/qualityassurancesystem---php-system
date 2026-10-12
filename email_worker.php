@@ -6,8 +6,14 @@
  *   php email_worker.php status    Counts by state and recent failures
  *   php email_worker.php run       Send everything still pending
  *   php email_worker.php run <id>  Resend one row, e.g. after fixing its
- *                                  address; a failed row is put back first
- *   php email_worker.php retry     Put failed rows back in the queue, then run
+ *                                  address; a failed or dry-run row is put
+ *                                  back first
+ *   php email_worker.php retry     Put back every row that was not actually
+ *                                  delivered (failed, or drained by a dry run),
+ *                                  then run
+ *
+ * Under EMAIL_DRY_RUN rows are marked 'dry-run', not 'sent': nothing was
+ * emailed, and retry is how they get sent once the settings are live.
  *
  * Task Scheduler runs this every 5 minutes -- see EMAIL_SETUP.md. That is
  * what makes an offline PC delay mail rather than lose it.
@@ -54,6 +60,17 @@ function email_worker_require_enabled(array $config){
     }
 }
 
+/** What a run did, worded so a dry run cannot be read as a delivery. */
+function email_worker_summary(array $result, array $config){
+    if(!empty($config['dry_run'])){
+        $line = sprintf('DRY RUN: %d row(s) marked dry-run, NOT emailed (nothing left the machine); failed %d',
+            $result['dry_run'], $result['failed']);
+    } else {
+        $line = sprintf('sent %d, failed %d', $result['sent'], $result['failed']);
+    }
+    return $line . email_worker_skipped_note($result);
+}
+
 /** The tail of a result line when rows were skipped on a database error. */
 function email_worker_skipped_note(array $result){
     return $result['errored'] > 0
@@ -68,8 +85,12 @@ switch($command){
     case 'status':
         $state = email_queue_status($conn);
         echo "Email outbox\n";
-        foreach(['pending', 'sent', 'failed'] as $key){
+        foreach(['pending', 'dry-run', 'sent', 'failed'] as $key){
             printf("  %-8s %d\n", $key, $state['counts'][$key] ?? 0);
+        }
+        if(!empty($state['counts']['dry-run'])){
+            // A bare count would read as healthy; say what it means.
+            echo "\n  dry-run rows were never emailed. `retry` puts them back in the queue.\n";
         }
         if(!empty($state['errors'])){
             echo "\nRecent failures\n";
@@ -118,9 +139,7 @@ switch($command){
             fwrite(STDERR, "Stopped: {$result['halted']}\n");
             exit(2);
         }
-        printf("sent %d, failed %d%s%s\n", $result['sent'], $result['failed'],
-            email_worker_skipped_note($result),
-            $config['dry_run'] ? ' (dry run: nothing left the machine)' : '');
+        echo email_worker_summary($result, $config), "\n";
         break;
 
     case 'retry':
@@ -133,10 +152,9 @@ switch($command){
             fwrite(STDERR, "Stopped: {$fault}\n");
             exit(2);
         }
-        printf("%d failed row(s) put back in the queue\n", email_reset_failed($conn));
+        printf("%d undelivered row(s) (failed or dry-run) put back in the queue\n", email_reset_failed($conn));
         $result = email_process_pending($conn, $config);
-        printf("sent %d, failed %d%s\n", $result['sent'], $result['failed'],
-            email_worker_skipped_note($result));
+        echo email_worker_summary($result, $config), "\n";
         break;
 
     default:

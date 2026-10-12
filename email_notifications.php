@@ -62,3 +62,87 @@ function ensure_email_outbox_table($conn){
         KEY status_created (status, created_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
 }
+
+/** Approved accounts that have an address, keyed by full name. */
+function email_accounts_by_name($conn){
+    static $byName = null;
+    if($byName !== null){
+        return $byName;
+    }
+
+    ensure_user_account_columns($conn);
+    $byName = [];
+    $sql = "SELECT username, full_name, office, email FROM users
+             WHERE status = '" . USER_STATUS_APPROVED . "'
+               AND email <> '' AND office <> '' AND office <> 'Admin'";
+    $result = mysqli_query($conn, $sql);
+    if($result){
+        while($row = $result->fetch_assoc()){
+            $name = trim((string) $row['full_name']) !== ''
+                ? trim($row['full_name'])
+                : trim((string) $row['username']);
+            if($name !== ''){
+                $byName[$name] = $row;
+            }
+        }
+    }
+    return $byName;
+}
+
+/** Approved accounts of one office that have an address. */
+function email_accounts_in_office($conn, $office){
+    $found = [];
+    foreach(email_accounts_by_name($conn) as $name => $row){
+        if($row['office'] === $office){
+            $found[] = $row;
+        }
+    }
+    return $found;
+}
+
+/**
+ * Who hears about this recommendation, by the rule the QA Head chose: a named
+ * person takes precedence over their whole office.
+ *
+ * A name only counts as "named" when it resolves to an approved account with
+ * an address. Six current assignments are typed-in names nobody holds --
+ * "Leo", "Borbon" -- and read literally the rule would email nobody and never
+ * fall back to the office, so the alert would vanish silently.
+ */
+function email_recipients_for($conn, array $row, $exceptEmail = ''){
+    $named = [];
+    $accounts = email_accounts_by_name($conn);
+
+    foreach(in_charge_decode($row['in_charge'] ?? '') as $entry){
+        if(isset($accounts[$entry])){
+            $named[] = $accounts[$entry];
+        }
+    }
+
+    // Only when no name resolved does the office take over, reaching the same
+    // offices the in-app inbox reaches (notification_recipients).
+    $chosen = $named;
+    if(empty($chosen)){
+        foreach(notification_recipients($conn, $row) as $office){
+            foreach(email_accounts_in_office($conn, $office) as $account){
+                $chosen[] = $account;
+            }
+        }
+    }
+
+    $recipients = [];
+    $seen = [];
+    foreach($chosen as $account){
+        $email = strtolower(trim((string) $account['email']));
+        if($email === '' || $email === strtolower(trim((string) $exceptEmail)) || isset($seen[$email])){
+            continue;
+        }
+        $seen[$email] = true;
+        $recipients[] = [
+            'email'  => $account['email'],
+            'name'   => trim((string) $account['full_name']) !== '' ? $account['full_name'] : $account['username'],
+            'office' => $account['office'],
+        ];
+    }
+    return $recipients;
+}

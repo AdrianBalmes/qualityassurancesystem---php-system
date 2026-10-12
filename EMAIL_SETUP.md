@@ -85,7 +85,9 @@ EMAIL_ENABLED=false
 EMAIL_DRY_RUN=true
 ```
 
-Then assign a recommendation to an office in the system, and run:
+Now give the system something to send. On the dashboard, open any
+recommendation's **In Charge** cell and add an office or a person, then Save.
+That is what queues a message. Then run:
 
 ```
 email_worker.php run
@@ -96,6 +98,16 @@ You should see something like:
 ```
 DRY RUN: 1 row(s) marked dry-run, NOT emailed (nothing left the machine); failed 0
 ```
+
+**If it says `0 row(s)`**, the queue was empty -- the worker ran correctly and
+had nothing to do. It does not mean anything is broken. Either the assignment
+above was not saved, or it changed nothing the system emails about. Check with
+`email_worker.php status`: if `pending` is 0 as well, no message was ever
+queued. Mail is queued when a recommendation's text is written for the first
+time, when an office or person is added to In Charge, and when the status
+becomes Rejected or Needs Revision -- not when it is approved, completed, or
+given review feedback alone, and not when you re-save a row without changing
+any of those.
 
 That confirms the whole chain works: the assignment queued a row, and the
 worker processed it. **Nothing was emailed.** A dry run marks each row

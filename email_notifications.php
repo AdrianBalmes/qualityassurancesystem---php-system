@@ -184,3 +184,97 @@ function email_recipients_for($conn, array $row, $exceptEmail = ''){
     }
     return $recipients;
 }
+
+/**
+ * The events that email. Anything not listed queues nothing, whatever its
+ * status reads. Feedback, Approved and Completed stay in the in-app inbox,
+ * or the mail becomes noise people filter.
+ */
+const EMAIL_EVENTS = [NOTIFY_NEW, NOTIFY_ASSIGNED, NOTIFY_STATUS];
+
+/** Statuses that mean the office has to do something about it. */
+const EMAIL_ACTION_STATUSES = ['Rejected', 'Needs Revision'];
+
+/**
+ * Whether this event emails at all. New and assigned always do; a status
+ * change only when it hands work back.
+ */
+function email_event_sends($event, $status = ''){
+    if(!in_array($event, EMAIL_EVENTS, true)){
+        return false;
+    }
+    if($event === NOTIFY_STATUS){
+        return in_array(trim((string) $status), EMAIL_ACTION_STATUSES, true);
+    }
+    return true;
+}
+
+/**
+ * Subject and body, rendered now rather than when the mail is sent: it should
+ * describe the assignment as it was, the same reasoning notifications.php
+ * records for its stored text.
+ *
+ * Deliberately absent: compliance responses, review remarks and document
+ * names. On a recommendation shared between offices those would send one
+ * office's submission to another. Only the fields read below ever reach the
+ * body, so keep it that way when adding to this function.
+ */
+function email_render($row, $event, $recipient){
+    $config = email_config();
+    $office = trim((string) ($row['office'] ?? ''));
+    $text = trim((string) ($row['recommendation'] ?? ''));
+    $status = trim((string) ($row['status'] ?? ''));
+
+    if($event === NOTIFY_STATUS){
+        $subject = "{$status}: a {$office} recommendation needs your attention";
+        $lead = "A recommendation you are responsible for is now marked {$status}.";
+    } elseif($event === NOTIFY_ASSIGNED){
+        $subject = "You have been put in charge of a {$office} recommendation";
+        $lead = "You have been put in charge of the recommendation below.";
+    } else {
+        $subject = "New recommendation for {$office}";
+        $lead = "A new recommendation has been filed for your office.";
+    }
+
+    $name = trim((string) $recipient['name']);
+    $body = "Hello {$name},\n\n{$lead}\n\n"
+          . "Office: {$office}\n"
+          . "Recommendation: " . ($text !== '' ? $text : '(not written out yet)') . "\n\n"
+          . "Open the dashboard to respond:\n{$config['site_url']}/\n\n"
+          . "--\nSBC Quality Assurance\nThis is an automated message; replies are not read.";
+
+    return ['subject' => mb_substr($subject, 0, 200), 'body' => $body];
+}
+
+/** Queue one message per recipient. Returns how many rows were written. */
+function email_notify($conn, array $row, $event, $exceptEmail = ''){
+    $config = email_config();
+    if(!$config['enabled'] && !$config['dry_run']){
+        // Off entirely: queueing would pile up rows nothing ever drains.
+        return 0;
+    }
+    if(!email_event_sends($event, $row['status'] ?? '')){
+        return 0;
+    }
+
+    ensure_email_outbox_table($conn);
+    $recipients = email_recipients_for($conn, $row, $exceptEmail);
+    if(empty($recipients)){
+        return 0;
+    }
+
+    $stmt = $conn->prepare("INSERT INTO email_outbox
+        (recommendation_id, recipient_email, recipient_name, recipient_office, event, subject, body)
+        VALUES (?,?,?,?,?,?,?)");
+
+    $queued = 0;
+    foreach($recipients as $recipient){
+        $message = email_render($row, $event, $recipient);
+        $recId = isset($row['id']) && (int) $row['id'] > 0 ? (int) $row['id'] : null;
+        $stmt->bind_param("issssss", $recId, $recipient['email'], $recipient['name'],
+            $recipient['office'], $event, $message['subject'], $message['body']);
+        $stmt->execute();
+        $queued++;
+    }
+    return $queued;
+}

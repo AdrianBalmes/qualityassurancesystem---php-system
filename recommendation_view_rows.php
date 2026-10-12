@@ -4,6 +4,7 @@ require_once __DIR__ . "/audit_areas.php";
 require_once __DIR__ . "/recommendation_rules.php";
 require_once __DIR__ . "/in_charge.php";
 require_once __DIR__ . "/office_statuses.php";
+require_once __DIR__ . "/deadlines.php";
 
 /**
  * How wide a full-width row has to be to span the grid. The Office column is
@@ -29,6 +30,10 @@ function recommendation_filters_from_request($source){
         'in_charge' => trim((string) ($source['in_charge'] ?? '')),
         'status'    => trim((string) ($source['status'] ?? '')),
         'year'      => trim((string) ($source['year'] ?? '')),
+        'deadline'  => trim((string) ($source['deadline'] ?? '')),
+        // Not a filter: the Deadline column header asks for an order here, so
+        // it rides along rather than needing a second request reader.
+        'sort'      => trim((string) ($source['sort'] ?? '')),
     ];
 }
 
@@ -98,7 +103,8 @@ function recommendation_filter_options($conn, $auditType){
  * for.
  */
 function fetch_office_recommendations($conn, $selectedOffice, $selectedAudit, $selectedArea = '', $selectedProgram = '', $filters = []){
-    $filters = array_merge(['search' => '', 'in_charge' => '', 'status' => '', 'year' => ''], $filters);
+    $filters = array_merge(['search' => '', 'in_charge' => '', 'status' => '', 'year' => '',
+                            'deadline' => '', 'sort' => ''], $filters);
 
     $where  = ["audit_type = ?"];
     $types  = "s";
@@ -150,7 +156,21 @@ function fetch_office_recommendations($conn, $selectedOffice, $selectedAudit, $s
         }
     }
 
+    // Buckets carry no user data -- deadlines.php matches the value against the
+    // known set and every term is a literal or CURDATE() -- so this needs no
+    // placeholder, unlike every filter above it.
+    $deadlineWhere = deadline_filter_sql($filters['deadline']);
+    if($deadlineWhere !== ''){
+        $where[] = $deadlineWhere;
+    }
+
     $order = $selectedOffice === '' ? "office ASC, year DESC, id DESC" : "year DESC, id DESC";
+    // A deadline sort leads, with the board's own order kept as the tiebreak so
+    // rows sharing a date do not shuffle between loads.
+    $deadlineOrder = deadline_sort_sql($filters['sort']);
+    if($deadlineOrder !== ''){
+        $order = $deadlineOrder . ', ' . $order;
+    }
     $stmt = $conn->prepare("SELECT * FROM audit_recommendations WHERE " . implode(' AND ', $where) . " ORDER BY {$order}");
     $stmt->bind_param($types, ...$params);
     $stmt->execute();

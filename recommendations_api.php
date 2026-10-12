@@ -147,7 +147,7 @@ if($action === 'save_in_charge'){
         exit();
     }
 
-    $rowStmt = $conn->prepare("SELECT office, in_charge FROM audit_recommendations WHERE id = ? LIMIT 1");
+    $rowStmt = $conn->prepare("SELECT office, in_charge, recommendation FROM audit_recommendations WHERE id = ? LIMIT 1");
     $rowStmt->bind_param("i", $id);
     $rowStmt->execute();
     $row = $rowStmt->get_result()->fetch_assoc();
@@ -229,10 +229,9 @@ if($action === 'save_in_charge'){
         return in_array($name, $knownOffices, true) && !in_array($name, $stored, true);
     }));
     if(!empty($newlyAssigned)){
-        $recStmt = $conn->prepare("SELECT recommendation FROM audit_recommendations WHERE id = ? LIMIT 1");
-        $recStmt->bind_param("i", $id);
-        $recStmt->execute();
-        $recText = trim((string) ($recStmt->get_result()->fetch_assoc()['recommendation'] ?? ''));
+        // The UPDATE above writes only in_charge, so the text read before it
+        // is still the text.
+        $recText = trim((string) $row['recommendation']);
 
         notify_offices($conn, $newlyAssigned, NOTIFY_ASSIGNED, $id,
             "Your office was put in charge of a {$row['office']} recommendation",
@@ -240,29 +239,26 @@ if($action === 'save_in_charge'){
             $actorOffice);
     }
 
+    log_audit_event($conn, $actorUsername, $actorRole, $actorOffice, 'in_charge_updated', 'recommendation', $id,
+        "Set who is in charge of recommendation #{$id} ({$row['office']}) to {$who}");
+
     // Email the people now responsible. This is not nested under the in-app
     // block above: that one only fires for offices, but the email rule puts a
     // named person first, and a person is never in $knownOffices. Only the
     // names added by this save are mailed, so re-saving the list does not
-    // alert everyone who was already in charge.
+    // alert everyone who was already in charge. It runs after the audit entry
+    // so nothing added here can cost the record of a change already saved.
     $addedNames = array_values(array_diff($names, $stored));
     if(!empty($addedNames)){
-        $emailStmt = $conn->prepare("SELECT recommendation FROM audit_recommendations WHERE id = ? LIMIT 1");
-        $emailStmt->bind_param("i", $id);
-        $emailStmt->execute();
-        $emailText = trim((string) ($emailStmt->get_result()->fetch_assoc()['recommendation'] ?? ''));
-
         // Recipients differ from the in-app rule -- a named person takes
         // precedence over their office.
         email_notify($conn, [
             'id'             => $id,
             'office'         => $row['office'],
-            'recommendation' => $emailText,
+            'recommendation' => trim((string) $row['recommendation']),
             'in_charge'      => in_charge_encode($addedNames),
-        ], NOTIFY_ASSIGNED);
+        ], NOTIFY_ASSIGNED, email_actor_address($conn, $actorUsername));
     }
-    log_audit_event($conn, $actorUsername, $actorRole, $actorOffice, 'in_charge_updated', 'recommendation', $id,
-        "Set who is in charge of recommendation #{$id} ({$row['office']}) to {$who}");
 
     echo json_encode(['ok' => true, 'in_charge' => $names]);
     exit();
@@ -460,6 +456,10 @@ if($action === 'save_office_recommendation'){
                 ($recommendation !== '' ? $recommendation : 'This recommendation has no text yet.'));
         }
 
+        // The dashboard names who is in charge through this save, not through
+        // save_in_charge, so the assignment mail has to be decided here too.
+        // Email only: the in-app inbox above is deliberately unchanged.
+        $actorAddress = email_actor_address($conn, $adminUsername);
         $emailRow = [
             'id'             => $id,
             'office'         => $beforeRow['office'],
@@ -467,10 +467,22 @@ if($action === 'save_office_recommendation'){
             'in_charge'      => $inCharge,
             'status'         => $status,
         ];
+        $queued = 0;
         if($wasBlank && $recommendation !== ''){
-            email_notify($conn, $emailRow, NOTIFY_NEW);
+            $queued = email_notify($conn, $emailRow, NOTIFY_NEW, $actorAddress);
         } elseif($beforeRow['status'] !== $status){
-            email_notify($conn, $emailRow, NOTIFY_STATUS);
+            $queued = email_notify($conn, $emailRow, NOTIFY_STATUS, $actorAddress);
+        }
+        // Whoever this save put in charge is told they have the task -- unless
+        // the event above already mailed them about the same recommendation.
+        $addedNames = array_values(array_diff(in_charge_decode($inCharge), in_charge_decode($beforeRow['in_charge'] ?? '')));
+        if($queued === 0 && !empty($addedNames)){
+            email_notify($conn, [
+                'id'             => $id,
+                'office'         => $beforeRow['office'],
+                'recommendation' => $recommendation,
+                'in_charge'      => in_charge_encode($addedNames),
+            ], NOTIFY_ASSIGNED, $actorAddress);
         }
     }
 
@@ -689,7 +701,7 @@ if($action === 'review_recommendation'){
             'recommendation' => $beforeRow['recommendation'],
             'in_charge'      => $beforeRow['in_charge'],
             'status'         => $newStatus,
-        ], NOTIFY_STATUS);
+        ], NOTIFY_STATUS, email_actor_address($conn, $adminUsername));
     }
 
     echo json_encode(['ok' => true, 'status' => $newStatus, 'review_remarks' => $reviewRemarks, 'doc_id' => $reviewedDoc ? (int) $reviewedDoc['id'] : null, 'doc_review_status' => $reviewedDoc ? $docReviewStatus : null]);

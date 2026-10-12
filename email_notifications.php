@@ -229,8 +229,24 @@ function email_render($row, $event, $recipient){
         $subject = "{$status}: a {$office} recommendation needs your attention";
         $lead = "A recommendation you are responsible for is now marked {$status}.";
     } elseif($event === NOTIFY_ASSIGNED){
-        $subject = "You have been put in charge of a {$office} recommendation";
-        $lead = "You have been put in charge of the recommendation below.";
+        // The recipient set is deliberate (a named person, else the office and
+        // the owner), but the wording has to fit who is reading. Telling the
+        // owner office's staff they were "put in charge" of their own
+        // recommendation, because another office was added, would be false.
+        $named = array_map('trim', in_charge_decode($row['in_charge'] ?? ''));
+        $recipientName = trim((string) $recipient['name']);
+        $recipientOffice = trim((string) ($recipient['office'] ?? ''));
+        if($recipientName !== '' && in_array($recipientName, $named, true)){
+            $subject = "You have been put in charge of a {$office} recommendation";
+            $lead = "You have been put in charge of the recommendation below.";
+        } elseif($recipientOffice !== '' && in_array($recipientOffice, $named, true)){
+            $subject = "Your office has been put in charge of a {$office} recommendation";
+            $lead = "Your office has been put in charge of the recommendation below.";
+        } else {
+            $who = !empty($named) ? implode(', ', $named) : 'someone else';
+            $subject = "A {$office} recommendation has been assigned";
+            $lead = "A recommendation for your office has been assigned to {$who}.";
+        }
     } else {
         $subject = "New recommendation for {$office}";
         $lead = "A new recommendation has been filed for your office.";
@@ -244,6 +260,24 @@ function email_render($row, $event, $recipient){
           . "--\nSBC Quality Assurance\nThis is an automated message; replies are not read.";
 
     return ['subject' => mb_substr($subject, 0, 200), 'body' => $body];
+}
+
+/**
+ * The address of whoever is making the change, so rule 4 can exclude them.
+ * Read from the rows email_notify() loads anyway -- no extra query -- and ''
+ * when the actor has no account, no address, or the lookup failed.
+ */
+function email_actor_address($conn, $username){
+    try {
+        foreach(email_staff_rows($conn) as $row){
+            if($row['username'] === $username){
+                return trim((string) $row['email']);
+            }
+        }
+    } catch(Throwable $e){
+        return '';
+    }
+    return '';
 }
 
 /**

@@ -7,7 +7,9 @@
 $_SERVER['REQUEST_METHOD'] = 'POST';
 $_SERVER['REMOTE_ADDR'] = '127.0.0.1';
 session_start();
-$_SESSION['admin_username'] = 'admin';
+// A second argument names the acting account, so the test can check that
+// whoever made a change is not emailed about it.
+$_SESSION['admin_username'] = $argv[2] ?? 'admin';
 $_SESSION['admin_role'] = 'admin';
 $_SESSION['admin_user_id'] = 1;
 $_SESSION['admin_role_slug'] = 'qa_head';

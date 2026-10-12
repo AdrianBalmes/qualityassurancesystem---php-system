@@ -12,6 +12,7 @@ require_once __DIR__ . "/recommendation_rules.php";
 require_once __DIR__ . "/audit_log_helper.php";
 require_once __DIR__ . "/review_columns.php";
 require_once __DIR__ . "/onedrive_sync.php";
+require_once __DIR__ . "/deadlines.php";
 
 ensure_review_columns($conn);
 
@@ -537,6 +538,7 @@ img,canvas,svg{max-width:100%}
                     <th>Recommendation</th>
                     <th style="width:130px">Status</th>
                     <th style="width:110px">Year</th>
+                    <th style="width:130px">Deadline</th>
                     <th style="width:200px">Compliance Response</th>
                     <th style="width:200px">Review Feedback</th>
                     <th style="width:150px">Supporting Documents</th>
@@ -572,6 +574,19 @@ img,canvas,svg{max-width:100%}
                         $label = $statusInfo['label'];
                         $chipClass = $statusInfo['class'];
                         $year = $row['year'] !== '' ? htmlspecialchars($row['year'], ENT_QUOTES) : '';
+
+                        // Read-only here: the office is told the date, the QA
+                        // office sets it. Same wording and colours as the board,
+                        // so neither side has to be translated into the other.
+                        $deadlineState = deadline_state($row);
+                        $deadlineChip = ['overdue' => 'chip-red', 'soon' => 'chip-orange', 'met' => 'chip-steel'][$deadlineState] ?? 'chip-blue';
+                        $deadlineNote = ['overdue' => 'Past due', 'soon' => 'Due soon', 'met' => 'Met', 'future' => 'Due'][$deadlineState] ?? '';
+                        if($deadlineState === 'none'){
+                            $deadlineHtml = '<span class="muted-copy">No deadline</span>';
+                        } else {
+                            $deadlineOn = htmlspecialchars(date('M j, Y', strtotime($row['deadline'])), ENT_QUOTES);
+                            $deadlineHtml = "<span class='status-chip {$deadlineChip}' title='{$deadlineNote}'>{$deadlineOn}</span>";
+                        }
                         $reviewFeedbackDisplay = !empty($shownFeedback) ? nl2br(htmlspecialchars($shownFeedback, ENT_QUOTES)) : '<span class="muted-copy">No feedback yet</span>';
 
                         // Completed is final for the office (the server refuses it too).
@@ -606,6 +621,7 @@ img,canvas,svg{max-width:100%}
                             <td class='rec-text-cell'>{$recText}</td>
                             <td><span class='status-chip {$chipClass}'>{$label}</span></td>
                             <td>{$year}</td>
+                            <td>{$deadlineHtml}</td>
                             <td class='rec-text-cell'>{$remarksDisplay}</td>
                             <td class='rec-text-cell'><div class='review-feedback-block'>{$reviewFeedbackDisplay}</div></td>
                             <td>{$docsHtml}</td>

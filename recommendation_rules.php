@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . "/deadlines.php";
+
 /**
  * Whether an office should see/act on a recommendation: its own office, or one
  * of the offices/persons an admin assigned in_charge of accomplishing it.
@@ -136,6 +138,13 @@ function office_can_remove_document($doc, $recommendationStatus, $office){
 function classify_recommendation_status($row){
     if($row['status'] === 'Completed'){
         return 'Completed';
+    }
+    // A deadline is a date somebody chose for this recommendation, so it
+    // outranks the year, which is only the audit cycle it belongs to. Without
+    // this the dashboard counted "Overdue: 0" while the board showed the row
+    // red, and the two readings of the same word disagreed.
+    if(deadline_state($row) === 'overdue'){
+        return 'Overdue';
     }
     $endYear = recommendation_year_end($row['year'] ?? '');
     if($endYear > 0 && $endYear < (int) date('Y')){

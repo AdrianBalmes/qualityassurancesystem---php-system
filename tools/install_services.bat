@@ -1,7 +1,7 @@
 @echo off
 REM ---------------------------------------------------------------------------
 REM Install Apache, MySQL and the Cloudflare tunnel as Windows services, and
-REM register the health check.
+REM register the health check and the email worker.
 REM
 REM Why: the site went dark for most of 2026-09-22 because Apache and MySQL
 REM were stopped while the tunnel kept running, so Cloudflare had nothing to
@@ -74,6 +74,11 @@ echo.
 echo === Registering the health check (every 5 minutes) ===
 schtasks /Create /TN "QA System - Health Check" /TR "\"%PROJECT%\tools\health_check.bat\"" /SC MINUTE /MO 5 /RU SYSTEM /RL HIGHEST /F >nul 2>&1
 if errorlevel 1 (echo   could not register the task) else (echo   registered: "QA System - Health Check")
+
+echo.
+echo === Registering the email worker (every 5 minutes) ===
+schtasks /Create /TN "QA System - Email Worker" /TR "\"%PROJECT%\tools\email_worker.bat\"" /SC MINUTE /MO 5 /RU SYSTEM /RL HIGHEST /F >nul 2>&1
+if errorlevel 1 (echo   could not register the task) else (echo   registered: "QA System - Email Worker")
 
 echo.
 echo Done. Check with:  sc query Apache2.4 ^& sc query mysql ^& sc query cloudflared

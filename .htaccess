@@ -28,5 +28,9 @@ DirectoryIndex landing.php index.php
     # Command-line maintenance scripts. They refuse to run over the web on
     # their own; this keeps them from being reachable at all.
     RedirectMatch 404 "(?i)/tools/"
+    # The test scripts write to the live database, and _api_call.php forges a
+    # signed-in session. They refuse to run over the web on their own; this
+    # keeps them unreachable even if that guard is ever dropped.
+    RedirectMatch 404 "(?i)/tests/"
     RedirectMatch 404 "(?i)/_bisect/"
 </IfModule>

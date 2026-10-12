@@ -4,6 +4,14 @@
  * test shells out to this so each call is a fresh process, as a browser
  * request is, with no per-request caches carried over from the test itself.
  */
+
+// Command line only. tests/ is denied in .htaccess as well, for the same
+// reason tools/ is: this file forges a signed-in session, so a
+// single web request to it would hand the visitor an administrator's session.
+if(PHP_SAPI !== 'cli'){
+    http_response_code(403);
+    exit("This script is command line only.\n");
+}
 $_SERVER['REQUEST_METHOD'] = 'POST';
 $_SERVER['REMOTE_ADDR'] = '127.0.0.1';
 session_start();

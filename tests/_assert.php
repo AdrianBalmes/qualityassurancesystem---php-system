@@ -1,5 +1,13 @@
 <?php
 
+// Command line only. tests/ is denied in .htaccess as well, for the same
+// reason tools/ is: every file here runs against the live ems_db,
+// so reached over the web they would let anyone alter it.
+if(PHP_SAPI !== 'cli'){
+    http_response_code(403);
+    exit("This script is command line only.\n");
+}
+
 /**
  * The project has no test framework and no Composer, so this stands in for
  * PHPUnit. Each test file requires it, calls the helpers, then t_summary().

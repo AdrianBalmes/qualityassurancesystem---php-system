@@ -1,4 +1,12 @@
 <?php
+
+// Command line only. tests/ is denied in .htaccess as well, for the same
+// reason tools/ is: every file here runs against the live ems_db,
+// so reached over the web they would let anyone alter it.
+if(PHP_SAPI !== 'cli'){
+    http_response_code(403);
+    exit("This script is command line only.\n");
+}
 require_once __DIR__ . "/_assert.php";
 require_once __DIR__ . "/../database.php";
 require_once __DIR__ . "/../email_notifications.php";

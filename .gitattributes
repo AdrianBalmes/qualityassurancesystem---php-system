@@ -1,0 +1,4 @@
+# Vendored third-party code, kept exactly as published so the committed copy
+# can be byte-compared against the upstream release. core.autocrlf is true on
+# the build machine, which would otherwise rewrite these to CRLF on checkout.
+lib/PHPMailer/** -text

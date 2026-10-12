@@ -11,6 +11,7 @@ require_once __DIR__ . "/recommendation_rules.php";
 require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/office_statuses.php";
 require_once __DIR__ . "/notifications.php";
+require_once __DIR__ . "/email_notifications.php";
 require_once __DIR__ . "/permissions.php";
 header('Content-Type: application/json');
 
@@ -238,6 +239,28 @@ if($action === 'save_in_charge'){
             $recText !== '' ? $recText : 'The recommendation has not been written out yet.',
             $actorOffice);
     }
+
+    // Email the people now responsible. This is not nested under the in-app
+    // block above: that one only fires for offices, but the email rule puts a
+    // named person first, and a person is never in $knownOffices. Only the
+    // names added by this save are mailed, so re-saving the list does not
+    // alert everyone who was already in charge.
+    $addedNames = array_values(array_diff($names, $stored));
+    if(!empty($addedNames)){
+        $emailStmt = $conn->prepare("SELECT recommendation FROM audit_recommendations WHERE id = ? LIMIT 1");
+        $emailStmt->bind_param("i", $id);
+        $emailStmt->execute();
+        $emailText = trim((string) ($emailStmt->get_result()->fetch_assoc()['recommendation'] ?? ''));
+
+        // Recipients differ from the in-app rule -- a named person takes
+        // precedence over their office.
+        email_notify($conn, [
+            'id'             => $id,
+            'office'         => $row['office'],
+            'recommendation' => $emailText,
+            'in_charge'      => in_charge_encode($addedNames),
+        ], NOTIFY_ASSIGNED);
+    }
     log_audit_event($conn, $actorUsername, $actorRole, $actorOffice, 'in_charge_updated', 'recommendation', $id,
         "Set who is in charge of recommendation #{$id} ({$row['office']}) to {$who}");
 
@@ -435,6 +458,19 @@ if($action === 'save_office_recommendation'){
             notify_offices($conn, $recipients, NOTIFY_STATUS, $id,
                 "Status changed to {$status}",
                 ($recommendation !== '' ? $recommendation : 'This recommendation has no text yet.'));
+        }
+
+        $emailRow = [
+            'id'             => $id,
+            'office'         => $beforeRow['office'],
+            'recommendation' => $recommendation,
+            'in_charge'      => $inCharge,
+            'status'         => $status,
+        ];
+        if($wasBlank && $recommendation !== ''){
+            email_notify($conn, $emailRow, NOTIFY_NEW);
+        } elseif($beforeRow['status'] !== $status){
+            email_notify($conn, $emailRow, NOTIFY_STATUS);
         }
     }
 
@@ -645,6 +681,15 @@ if($action === 'review_recommendation'){
     } elseif($reviewRemarks !== ''){
         notify_offices($conn, $reviewRecipients, NOTIFY_FEEDBACK, $id,
             'New review feedback', $reviewRemarks);
+    }
+    if($beforeRow['status'] !== $newStatus){
+        email_notify($conn, [
+            'id'             => $id,
+            'office'         => $beforeRow['office'],
+            'recommendation' => $beforeRow['recommendation'],
+            'in_charge'      => $beforeRow['in_charge'],
+            'status'         => $newStatus,
+        ], NOTIFY_STATUS);
     }
 
     echo json_encode(['ok' => true, 'status' => $newStatus, 'review_remarks' => $reviewRemarks, 'doc_id' => $reviewedDoc ? (int) $reviewedDoc['id'] : null, 'doc_review_status' => $reviewedDoc ? $docReviewStatus : null]);

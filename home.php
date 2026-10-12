@@ -927,7 +927,7 @@ document.querySelectorAll('[data-slide-office]').forEach(function(button){button
         tr.setAttribute('data-mode', mode);
         var editing = mode === 'edit';
         tr.querySelectorAll('.cell-text').forEach(function(el){ el.setAttribute('contenteditable', editing ? 'true' : 'false'); });
-        tr.querySelectorAll('.cell-select, .cell-year').forEach(function(el){ el.disabled = !editing; });
+        tr.querySelectorAll('.cell-select, .cell-year, .cell-deadline').forEach(function(el){ el.disabled = !editing; });
     }
 
     function readRowValues(tr){

@@ -467,20 +467,26 @@ if($action === 'save_office_recommendation'){
             'in_charge'      => $inCharge,
             'status'         => $status,
         ];
+        // $mailedTo comes back holding whoever this mail reached, so the
+        // assignment mail below does not tell the same person the same thing
+        // twice. A blank row written out and assigned in one save is the
+        // ordinary case here, not an edge: rows are created blank and filled in.
+        $mailedTo = [];
         if($wasBlank && $recommendation !== ''){
-            email_notify($conn, $emailRow, NOTIFY_NEW, $actorAddress);
+            email_notify($conn, $emailRow, NOTIFY_NEW, $actorAddress, $mailedTo);
         } elseif($beforeRow['status'] !== $status){
-            email_notify($conn, $emailRow, NOTIFY_STATUS, $actorAddress);
+            email_notify($conn, $emailRow, NOTIFY_STATUS, $actorAddress, $mailedTo);
         }
-        // Whoever this save put in charge is told they have the task, whether
-        // or not the event above also mailed. The two do not reach the same
-        // people: the event mail resolves from the whole in_charge list, where
-        // a named person takes precedence over any office, while this one
-        // resolves from only the added names. Gating on "the event already
-        // mailed someone" lost the assignment outright when a status change
-        // went to an existing named person and an office was added alongside.
-        // A person who is both gets two mails about two different facts, which
-        // is accurate; silence is the failure this feature exists to prevent.
+        // Whoever this save put in charge is told they have the task, minus
+        // anyone the mail above already reached. The two calls resolve
+        // different people -- that one from the whole in_charge list, where a
+        // named person takes precedence over any office, this one from only the
+        // added names -- so they can neither share a gate nor share a
+        // resolution. Gating this call on "the first one queued nothing" lost
+        // an office added alongside a status change; firing it unconditionally
+        // mailed one person twice when a blank row was written out and assigned
+        // at once. Excluding the addresses already reached is what leaves
+        // nobody dropped and nobody told twice.
         $addedNames = array_values(array_diff(in_charge_decode($inCharge), in_charge_decode($beforeRow['in_charge'] ?? '')));
         if(!empty($addedNames)){
             email_notify($conn, [
@@ -488,7 +494,7 @@ if($action === 'save_office_recommendation'){
                 'office'         => $beforeRow['office'],
                 'recommendation' => $recommendation,
                 'in_charge'      => in_charge_encode($addedNames),
-            ], NOTIFY_ASSIGNED, $actorAddress);
+            ], NOTIFY_ASSIGNED, array_merge([$actorAddress], $mailedTo));
         }
     }
 

@@ -223,16 +223,17 @@ foreach(t_trigger_outbox($conn) as $mail){
 t_ok('the added office is told it was put in charge', strpos($subjects[$frank] ?? '', 'Your office has been put in charge') === 0);
 t_ok('the owner office is not told it was put in charge', strpos($subjects[$dave] ?? 'put in charge', 'put in charge') === false);
 
-// A status change and a new name in the same save are two different facts --
-// "this is now Rejected" and "you have been put in charge" -- so a person who
-// is both gets both. The assignment mail used to be suppressed whenever the
-// status mail had gone, which was only harmless while both reached the same
-// people.
+// A status change and a new name in the same save. The person added is already
+// among the people the status mail reaches, because a named person takes
+// precedence over any office -- so the assignment mail excludes whoever that
+// mail reached and queues nothing here. One actionable message per person per
+// save: firing both unconditionally sent two near-identical mails.
 t_trigger_clear_outbox($conn);
 t_save($text, 'Rejected', ['Dave Tester', 'Erin Tester', T_TRIGGER_OFFICE_B, 'Frank Tester']);
-t_equals('a status change plus a new name sent both mails', t_trigger_events($conn), [NOTIFY_STATUS, NOTIFY_ASSIGNED]);
+t_equals('a status change plus a new name sent the status mail only', t_trigger_events($conn), [NOTIFY_STATUS]);
 t_equals('the status mail reached everyone named', t_trigger_recipients_for($conn, NOTIFY_STATUS), [$dave, $erin, $frank]);
-t_equals('the assignment mail reached only the person added', t_trigger_recipients_for($conn, NOTIFY_ASSIGNED), [$frank]);
+$frankMails = array_filter(t_trigger_outbox($conn), function($m) use ($frank){ return $m['recipient_email'] === $frank; });
+t_equals('the person put in charge got exactly one mail, not two', count($frankMails), 1);
 
 // The case the old gate lost. A named person is already in charge; the save
 // changes the status AND puts an office in charge. The status mail resolves
@@ -265,4 +266,18 @@ t_save($text, 'Pending', ['Dave Tester', T_TRIGGER_OFFICE_B]);
 t_equals('first text plus an added office: the new-recommendation mail reached the named person', t_trigger_recipients_for($conn, NOTIFY_NEW), [$dave]);
 t_ok('and the added office was told it was put in charge', in_array($frank, t_trigger_recipients_for($conn, NOTIFY_ASSIGNED), true));
 
+
+// The duplicate that firing both unconditionally produced, and the ordinary
+// case: a blank row gets its text and its first assignment in one save. The
+// new-recommendation mail already tells a named person they are in charge, so
+// a second mail would say the same thing twice.
+t_trigger_clear_outbox($conn);
+$blank = $conn->prepare("UPDATE audit_recommendations SET recommendation = '', in_charge = '' WHERE id = ?");
+$blankRec = T_TRIGGER_REC;
+$blank->bind_param("i", $blankRec);
+$blank->execute();
+t_save($text, 'Pending', ['Dave Tester']);
+t_equals('first text and assigned at once queued one event', t_trigger_events($conn), [NOTIFY_NEW]);
+t_equals('and exactly one mail', count(t_trigger_outbox($conn)), 1);
+t_equals('addressed to the person named', t_trigger_recipients_for($conn, NOTIFY_NEW), [$dave]);
 t_summary();

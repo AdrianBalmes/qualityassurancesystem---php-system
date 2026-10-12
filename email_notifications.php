@@ -139,7 +139,28 @@ function email_accounts_in_office($conn, $office){
  * so the alert would vanish silently. A named person with no address is dropped
  * from the chosen set, and when that leaves nobody the office takes over.
  */
+/**
+ * The addresses an event must not reach, as a lookup.
+ *
+ * Takes one address or a list. A single save can both change the status and
+ * put somebody in charge, and because a named person takes precedence over
+ * an office the two events resolve to different people -- so the assignment
+ * mail has to skip everyone the first mail already reached, not just the
+ * person who made the change.
+ */
+function email_except_set($exceptEmail){
+    $set = [];
+    foreach(is_array($exceptEmail) ? $exceptEmail : [$exceptEmail] as $address){
+        $address = strtolower(trim((string) $address));
+        if($address !== ''){
+            $set[$address] = true;
+        }
+    }
+    return $set;
+}
+
 function email_recipients_for($conn, array $row, $exceptEmail = ''){
+    $except = email_except_set($exceptEmail);
     $accounts = email_accounts_by_name($conn);
 
     $named = [];
@@ -172,7 +193,7 @@ function email_recipients_for($conn, array $row, $exceptEmail = ''){
     $seen = [];
     foreach($chosen as $account){
         $email = strtolower(trim((string) $account['email']));
-        if($email === '' || $email === strtolower(trim((string) $exceptEmail)) || isset($seen[$email])){
+        if($email === '' || isset($except[$email]) || isset($seen[$email])){
             continue;
         }
         $seen[$email] = true;
@@ -365,7 +386,10 @@ function email_record_unreachable($conn, array $row, $event){
  * would show an error for a change that had already succeeded. A failure is
  * logged, and the rows written before it are still counted.
  */
-function email_notify($conn, array $row, $event, $exceptEmail = ''){
+function email_notify($conn, array $row, $event, $exceptEmail = '', &$queuedTo = null){
+    // Filled with the addresses actually queued, so a caller firing two
+    // events for one save can exclude whoever the first one reached.
+    $queuedTo = [];
     $config = email_config();
     if(!$config['enabled'] && !$config['dry_run']){
         // Off entirely: queueing would pile up rows nothing ever drains.
@@ -384,7 +408,7 @@ function email_notify($conn, array $row, $event, $exceptEmail = ''){
             // Empty is not always a failure: someone assigning a recommendation
             // to themselves is deliberately not mailed (rule 4). Only when
             // there was nobody at all, actor included, has nobody been reached.
-            if(trim((string) $exceptEmail) === '' || empty(email_recipients_for($conn, $row, ''))){
+            if(empty(email_except_set($exceptEmail)) || empty(email_recipients_for($conn, $row, ''))){
                 $where = 'recording that nobody could be reached';
                 email_record_unreachable($conn, $row, $event);
             }
@@ -403,6 +427,7 @@ function email_notify($conn, array $row, $event, $exceptEmail = ''){
                 $recipient['office'], $event, $message['subject'], $message['body']);
             $stmt->execute();
             $queued++;
+            $queuedTo[] = $recipient['email'];
         }
     } catch(Throwable $e){
         error_log("email_notify: recommendation " . ($row['id'] ?? '?') . ", event {$event}, {$where}: "

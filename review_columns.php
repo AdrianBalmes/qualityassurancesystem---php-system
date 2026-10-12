@@ -27,12 +27,32 @@ function ensure_review_columns($conn){
         'area'           => "varchar(120) NOT NULL DEFAULT ''",
         'program'        => "varchar(120) NOT NULL DEFAULT ''",
         'in_charge'      => "text",
+        // A QA officer sets the date the office has to submit by. All three
+        // timestamps are the deadline's own bookkeeping: when each notice went
+        // out, and when the deadline was satisfied. Nullable because most
+        // recommendations have no deadline, which is a normal state and not
+        // missing data.
+        'deadline'                    => "date DEFAULT NULL",
+        'deadline_soon_notified_at'   => "datetime DEFAULT NULL",
+        'deadline_missed_notified_at' => "datetime DEFAULT NULL",
+        // Stamped the first time a status closes the deadline, so an office
+        // that submitted on time and was sent back after the date is never
+        // told it missed one.
+        'deadline_met_at'             => "datetime DEFAULT NULL",
     ];
     foreach($columns as $column => $definition){
         $result = mysqli_query($conn, "SHOW COLUMNS FROM audit_recommendations LIKE '{$column}'");
         if($result && $result->num_rows === 0){
             mysqli_query($conn, "ALTER TABLE audit_recommendations ADD COLUMN `{$column}` {$definition}");
         }
+    }
+
+    // The deadline sweep runs every few minutes forever, and this table had
+    // no index but its primary key. SHOW INDEX for the same reason SHOW
+    // COLUMNS is used above: a duplicate CREATE INDEX would throw.
+    $indexResult = mysqli_query($conn, "SHOW INDEX FROM audit_recommendations WHERE Key_name = 'deadline'");
+    if($indexResult && $indexResult->num_rows === 0){
+        mysqli_query($conn, "CREATE INDEX deadline ON audit_recommendations (deadline)");
     }
 
     // A year used to be four digits. It can now also be a school year --

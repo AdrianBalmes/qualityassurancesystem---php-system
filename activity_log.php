@@ -40,6 +40,7 @@ $knownActions = [
     'profile_updated' => 'Profile Updated',
     'password_changed' => 'Password Changed',
     'email_failed' => 'Email Failed',
+    'deadline_set' => 'Deadline Set',
 ];
 
 $filterOffice = isset($_GET['office']) ? trim($_GET['office']) : '';

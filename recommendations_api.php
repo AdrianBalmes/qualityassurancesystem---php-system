@@ -12,6 +12,7 @@ require_once __DIR__ . "/user_columns.php";
 require_once __DIR__ . "/office_statuses.php";
 require_once __DIR__ . "/notifications.php";
 require_once __DIR__ . "/email_notifications.php";
+require_once __DIR__ . "/deadlines.php";
 require_once __DIR__ . "/permissions.php";
 header('Content-Type: application/json');
 
@@ -387,6 +388,22 @@ if($action === 'save_office_recommendation'){
     // plain string is dropped rather than rejecting the whole save.
     $inCharge = in_charge_encode_posted($_POST['in_charge'] ?? '');
 
+    // Only QA staff may set a deadline. The field is ignored rather than
+    // refused for anyone else, for the same reason save_in_charge filters
+    // posted names against the acting office: do not trust the form to be the
+    // one we served. Validated here, before any write, so a bad date cannot
+    // leave the row half-saved.
+    $deadlineProvided = array_key_exists('deadline', $_POST) && current_user_can($conn, 'recommendations.manage');
+    $deadline = '';
+    if($deadlineProvided){
+        $deadline = deadline_clean_input($_POST['deadline']);
+        if($deadline === null){
+            http_response_code(400);
+            echo json_encode(['ok' => false, 'error' => 'Deadline must be a date, or empty']);
+            exit();
+        }
+    }
+
     if($id <= 0){
         http_response_code(400);
         echo json_encode(['ok' => false, 'error' => 'Invalid row']);
@@ -423,7 +440,7 @@ if($action === 'save_office_recommendation'){
         }
     }
 
-    $beforeStmt = $conn->prepare("SELECT office, status, recommendation, in_charge FROM audit_recommendations WHERE id = ? LIMIT 1");
+    $beforeStmt = $conn->prepare("SELECT office, status, recommendation, in_charge, deadline, deadline_met_at FROM audit_recommendations WHERE id = ? LIMIT 1");
     $beforeStmt->bind_param("i", $id);
     $beforeStmt->execute();
     $beforeRow = $beforeStmt->get_result()->fetch_assoc();
@@ -438,6 +455,39 @@ if($action === 'save_office_recommendation'){
     $stmt->execute();
 
     if($beforeRow){
+        if($deadlineProvided){
+            $wasDeadline = trim((string) ($beforeRow['deadline'] ?? ''));
+            $wasDeadline = $wasDeadline === '0000-00-00' ? '' : $wasDeadline;
+            if($deadline !== $wasDeadline){
+                // A different date is a different promise, so all three
+                // timestamps go: the notices for the old date no longer apply,
+                // and a deadline met before it moved is not met any more.
+                $newDeadline = $deadline === '' ? null : $deadline;
+                $setDeadline = $conn->prepare("UPDATE audit_recommendations
+                    SET deadline = ?, deadline_soon_notified_at = NULL,
+                        deadline_missed_notified_at = NULL, deadline_met_at = NULL
+                    WHERE id = ?");
+                $setDeadline->bind_param("si", $newDeadline, $id);
+                $setDeadline->execute();
+                $beforeRow['deadline_met_at'] = null;
+                log_audit_event($conn, $adminUsername, 'admin', $beforeRow['office'], 'deadline_set', 'recommendation', $id,
+                    $deadline === ''
+                        ? "Cleared the deadline on recommendation #{$id} ({$beforeRow['office']})"
+                        : "Set the deadline on recommendation #{$id} ({$beforeRow['office']}) to {$deadline}");
+            }
+        }
+
+        // Submitting on time is what satisfies a deadline, and this is the only
+        // record that it happened: without it, a recommendation sent back for
+        // revision after its date would be reported as missed, which it was not.
+        $effectiveDeadline = $deadlineProvided ? $deadline : trim((string) ($beforeRow['deadline'] ?? ''));
+        if($effectiveDeadline !== '' && $effectiveDeadline !== '0000-00-00'
+            && empty($beforeRow['deadline_met_at']) && !deadline_is_open($status)){
+            $markMet = $conn->prepare("UPDATE audit_recommendations SET deadline_met_at = NOW() WHERE id = ? AND deadline_met_at IS NULL");
+            $markMet->bind_param("i", $id);
+            $markMet->execute();
+        }
+
         $statusChange = $beforeRow['status'] !== $status ? " (status: {$beforeRow['status']} \xe2\x86\x92 {$status})" : "";
         log_audit_event($conn, $adminUsername, 'admin', $beforeRow['office'], 'recommendation_updated', 'recommendation', $id, "Updated recommendation for {$beforeRow['office']}{$statusChange}");
 

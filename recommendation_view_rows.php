@@ -13,8 +13,9 @@ require_once __DIR__ . "/deadlines.php";
  */
 function recommendation_grid_column_count($selectedOffice, $selectedAudit){
     $showOfficeColumn = $selectedOffice === '' || $selectedAudit !== 'External';
-    // Recommendation, In Charge, Status, Remarks, Documents, Year, Actions.
-    return $showOfficeColumn ? 8 : 7;
+    // Recommendation, In Charge, Status, Remarks, Documents, Year, Deadline,
+    // Actions.
+    return $showOfficeColumn ? 9 : 8;
 }
 
 /** The dropdown value standing for "blank" -- no year, or nobody in charge. */
@@ -224,6 +225,15 @@ function render_office_recommendation_rows($rows, $selectedOffice, $selectedAudi
     foreach($rows as $row){
         $recId = (int) $row['id'];
         $recYear = htmlspecialchars($row['year'], ENT_QUOTES);
+        // The date is read-only to an office, and the colour says how urgent it
+        // is without anybody opening the filter. A finished recommendation is
+        // never red, however old its date.
+        $recDeadline = htmlspecialchars(trim((string) ($row['deadline'] ?? '')), ENT_QUOTES);
+        if($recDeadline === '0000-00-00'){
+            $recDeadline = '';
+        }
+        $deadlineClass = ['overdue' => ' is-overdue', 'soon' => ' is-soon', 'met' => ' is-met'][deadline_state($row)] ?? '';
+        $deadlineTitle = ['overdue' => 'Past its deadline', 'soon' => 'Due soon', 'met' => 'Deadline met', 'future' => 'Due later', 'none' => 'No deadline set'][deadline_state($row)];
         $recOfficeName = htmlspecialchars($row['office'], ENT_QUOTES);
         $recText = htmlspecialchars($row['recommendation'], ENT_QUOTES);
         $reviewRemarks = htmlspecialchars($row['review_remarks'] ?? '', ENT_QUOTES);
@@ -298,6 +308,7 @@ function render_office_recommendation_rows($rows, $selectedOffice, $selectedAudi
             <td>{$remarksCellHtml}</td>
             <td>{$filesHtml}</td>
             <td><input type='text' class='cell-year' maxlength='9' data-field='year' value='{$recYear}' placeholder='2026 or 2026-2027' disabled></td>
+            <td><input type='date' class='cell-deadline{$deadlineClass}' data-field='deadline' value='{$recDeadline}' title='{$deadlineTitle}' disabled></td>
             <td>
                 <div class='row-actions'>
                     <button type='button' class='row-edit-btn' title='Edit row'><i class='bi bi-pencil'></i> Edit</button>

@@ -197,9 +197,17 @@ per tick.
 
 The filter toolbar and row rendering live in
 [recommendation_view_rows.php](../../../recommendation_view_rows.php), which
-`home.php` and `office_recommendations_view.php` both use — so the work lands on
-the QA board and the office's own view together, and an office can see what it
-owes and when.
+`home.php` renders and `office_recommendations_view.php` serves as JSON for the
+grid's own fetch.
+
+**Correction, found during implementation.** An earlier draft of this section
+said the work would reach "the office's own view" through that second file.
+It will not: `office_recommendations_view.php` is the grid's data endpoint and
+requires `recommendations.manage`, so it is QA-only, and `office_dashboard.php`
+builds its own tables rather than using this renderer. **Offices therefore do
+not see the deadline on their dashboard.** They learn of one through the
+notices, which is what was asked for; showing the date on the office dashboard
+is a separate change and is out of scope here.
 
 **The column.** A Deadline column takes the grid from 8 columns to 9, and from
 7 to 8 when the Office column is dropped, in

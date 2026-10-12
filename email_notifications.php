@@ -246,7 +246,14 @@ function email_render($row, $event, $recipient){
     return ['subject' => mb_substr($subject, 0, 200), 'body' => $body];
 }
 
-/** Queue one message per recipient. Returns how many rows were written. */
+/**
+ * Queue one message per recipient. Returns how many rows were written.
+ *
+ * Never throws. Queueing is a side effect of the user's action, not part of
+ * it: this runs after the recommendation has been saved, so an exception here
+ * would show an error for a change that had already succeeded. A failure is
+ * logged, and the rows written before it are still counted.
+ */
 function email_notify($conn, array $row, $event, $exceptEmail = ''){
     $config = email_config();
     if(!$config['enabled'] && !$config['dry_run']){
@@ -257,24 +264,31 @@ function email_notify($conn, array $row, $event, $exceptEmail = ''){
         return 0;
     }
 
-    ensure_email_outbox_table($conn);
-    $recipients = email_recipients_for($conn, $row, $exceptEmail);
-    if(empty($recipients)){
-        return 0;
-    }
-
-    $stmt = $conn->prepare("INSERT INTO email_outbox
-        (recommendation_id, recipient_email, recipient_name, recipient_office, event, subject, body)
-        VALUES (?,?,?,?,?,?,?)");
-
     $queued = 0;
-    foreach($recipients as $recipient){
-        $message = email_render($row, $event, $recipient);
-        $recId = isset($row['id']) && (int) $row['id'] > 0 ? (int) $row['id'] : null;
-        $stmt->bind_param("issssss", $recId, $recipient['email'], $recipient['name'],
-            $recipient['office'], $event, $message['subject'], $message['body']);
-        $stmt->execute();
-        $queued++;
+    $where = 'resolving recipients';
+    try {
+        ensure_email_outbox_table($conn);
+        $recipients = email_recipients_for($conn, $row, $exceptEmail);
+        if(empty($recipients)){
+            return 0;
+        }
+
+        $stmt = $conn->prepare("INSERT INTO email_outbox
+            (recommendation_id, recipient_email, recipient_name, recipient_office, event, subject, body)
+            VALUES (?,?,?,?,?,?,?)");
+
+        foreach($recipients as $recipient){
+            $where = "recipient {$recipient['email']}";
+            $message = email_render($row, $event, $recipient);
+            $recId = isset($row['id']) && (int) $row['id'] > 0 ? (int) $row['id'] : null;
+            $stmt->bind_param("issssss", $recId, $recipient['email'], $recipient['name'],
+                $recipient['office'], $event, $message['subject'], $message['body']);
+            $stmt->execute();
+            $queued++;
+        }
+    } catch(Throwable $e){
+        error_log("email_notify: recommendation " . ($row['id'] ?? '?') . ", event {$event}, {$where}: "
+            . $e->getMessage() . " ({$queued} queued before the failure)");
     }
     return $queued;
 }

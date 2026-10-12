@@ -63,36 +63,65 @@ function ensure_email_outbox_table($conn){
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
 }
 
-/** Approved accounts that have an address, keyed by full name. */
+/**
+ * Approved staff accounts, one row each, whether or not they have an address.
+ *
+ * Name resolution must not depend on deliverability: a person named in charge
+ * is still named when they have no address. Only the sending side filters on
+ * the address, so the office-fallback decision stays a decision and not an
+ * accident of a SQL filter.
+ */
+function email_staff_rows($conn){
+    static $rows = null;
+    if($rows !== null){
+        return $rows;
+    }
+
+    ensure_user_account_columns($conn);
+    $rows = [];
+    $sql = "SELECT username, full_name, office, email FROM users
+             WHERE status = '" . USER_STATUS_APPROVED . "'
+               AND office <> '' AND office <> 'Admin'";
+    $result = mysqli_query($conn, $sql);
+    if($result){
+        while($row = $result->fetch_assoc()){
+            $rows[] = $row;
+        }
+    }
+    return $rows;
+}
+
+/**
+ * Staff keyed by the name an in_charge entry is stored under. A name can be
+ * held by more than one account, so each key lists every holder: keying by
+ * name alone would keep the last holder and drop the rest without a trace,
+ * which is the silent loss this feature exists to prevent.
+ */
 function email_accounts_by_name($conn){
     static $byName = null;
     if($byName !== null){
         return $byName;
     }
 
-    ensure_user_account_columns($conn);
     $byName = [];
-    $sql = "SELECT username, full_name, office, email FROM users
-             WHERE status = '" . USER_STATUS_APPROVED . "'
-               AND email <> '' AND office <> '' AND office <> 'Admin'";
-    $result = mysqli_query($conn, $sql);
-    if($result){
-        while($row = $result->fetch_assoc()){
-            $name = trim((string) $row['full_name']) !== ''
-                ? trim($row['full_name'])
-                : trim((string) $row['username']);
-            if($name !== ''){
-                $byName[$name] = $row;
-            }
+    foreach(email_staff_rows($conn) as $row){
+        $name = trim((string) $row['full_name']) !== ''
+            ? trim($row['full_name'])
+            : trim((string) $row['username']);
+        if($name !== ''){
+            $byName[$name][] = $row;
         }
     }
     return $byName;
 }
 
-/** Approved accounts of one office that have an address. */
+/**
+ * Every approved account of one office. Read from the rows rather than the
+ * name map, so a shared name cannot remove anyone from the office fallback.
+ */
 function email_accounts_in_office($conn, $office){
     $found = [];
-    foreach(email_accounts_by_name($conn) as $name => $row){
+    foreach(email_staff_rows($conn) as $row){
         if($row['office'] === $office){
             $found[] = $row;
         }
@@ -104,24 +133,33 @@ function email_accounts_in_office($conn, $office){
  * Who hears about this recommendation, by the rule the QA Head chose: a named
  * person takes precedence over their whole office.
  *
- * A name only counts as "named" when it resolves to an approved account with
- * an address. Six current assignments are typed-in names nobody holds --
- * "Leo", "Borbon" -- and read literally the rule would email nobody and never
- * fall back to the office, so the alert would vanish silently.
+ * A name only counts as "named" when it resolves to an approved account. Six
+ * current assignments are typed-in names nobody holds -- "Leo", "Borbon" -- and
+ * read literally the rule would email nobody and never fall back to the office,
+ * so the alert would vanish silently. A named person with no address is dropped
+ * from the chosen set, and when that leaves nobody the office takes over.
  */
 function email_recipients_for($conn, array $row, $exceptEmail = ''){
-    $named = [];
     $accounts = email_accounts_by_name($conn);
 
+    $named = [];
     foreach(in_charge_decode($row['in_charge'] ?? '') as $entry){
-        if(isset($accounts[$entry])){
-            $named[] = $accounts[$entry];
+        foreach($accounts[$entry] ?? [] as $account){
+            $named[] = $account;
         }
     }
 
-    // Only when no name resolved does the office take over, reaching the same
-    // offices the in-app inbox reaches (notification_recipients).
-    $chosen = $named;
+    $chosen = [];
+    foreach($named as $account){
+        if(trim((string) $account['email']) !== ''){
+            $chosen[] = $account;
+        }
+    }
+
+    // Deliberate: when every named person is unreachable, the office gets the
+    // alert rather than nobody. Work that has to get done is better mailed to
+    // the office than lost, and the outbox is the only record that the named
+    // person could not be reached.
     if(empty($chosen)){
         foreach(notification_recipients($conn, $row) as $office){
             foreach(email_accounts_in_office($conn, $office) as $account){

@@ -30,9 +30,13 @@ ensure_audit_log_table($conn);
 // revived, without ever being delivered: the silent non-delivery this feature
 // exists to prevent.
 //
-// So the test refuses to start while the outbox holds anything it does not
-// own that those calls would touch, and changes nothing. That is the one thing
-// that makes the unscoped calls safe, so keep it in step with them:
+// So the unscoped calls are made only while the outbox holds nothing this test
+// does not own that they would touch. Otherwise that one section is skipped,
+// loudly, and everything else still runs: the scoped calls name their own ids
+// and cannot reach a foreign row, and a suite that refused to start whenever a
+// dry-run rehearsal had left rows behind (which nothing delivers, only `retry`
+// revives) would stop being run at all. That is the one thing that makes the
+// unscoped calls safe, so keep it in step with them:
 //   pending  - the unscoped run drains it
 //   failed   - the unscoped reset revives it
 //   dry-run  - the unscoped reset revives it too, since `retry` was widened
@@ -57,14 +61,24 @@ function t_foreign_count($conn){
     return (int) $foreign->get_result()->fetch_assoc()['c'];
 }
 
-$foreignCount = t_foreign_count($conn);
-if($foreignCount > 0){
-    fwrite(STDERR, "ABORTED: {$foreignCount} pending, failed or dry-run email_outbox row(s) are not this test's. "
-        . "Running would dry-run them (marking them undelivered) or revive them. "
-        . "Nothing was changed. Let the worker deliver them (or `retry` them once the settings are live), "
-        . "then run this again.\n");
-    exit(2);
+/**
+ * The rows the unscoped calls could touch, as they stand: compared at the end
+ * to prove that nothing this test did reached a row it does not own.
+ */
+function t_foreign_snapshot($conn){
+    $ownEmail = T_WORKER_EMAIL;
+    $stmt = $conn->prepare("SELECT id, status, attempts, last_error, sent_at FROM email_outbox
+                            WHERE status IN ('pending','failed','dry-run')
+                              AND NOT (status = 'failed' AND recipient_email = '')
+                              AND recipient_email <> ?
+                            ORDER BY id");
+    $stmt->bind_param("s", $ownEmail);
+    $stmt->execute();
+    return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 }
+
+$foreignCount = t_foreign_count($conn);
+$foreignAtStart = t_foreign_snapshot($conn);
 
 // The test deletes recommendation 999003 to prove a row sends without it, so
 // it must be the one that inserted it. Never delete a real record.
@@ -312,11 +326,12 @@ t_equals('the dry-run row is pending again', t_fetch_row($conn, $a)['status'], '
 // check is repeated immediately before, to shrink the window in which a real
 // assignment could arrive and be swept up.
 t_clear_own($conn);
-$late = t_foreign_count($conn);
-if($late > 0){
-    fwrite(STDERR, "ABORTED: {$late} pending, failed or dry-run email_outbox row(s) that are not this test's "
-        . "appeared mid-run, so the unscoped calls were not made. Nothing foreign was changed.\n");
-    exit(2);
+$unscopedSkipReason = null;
+if($foreignCount > 0){
+    $unscopedSkipReason = "{$foreignCount} pending, failed or dry-run email_outbox row(s) are not this test's "
+        . "(e.g. left by a dry-run rehearsal; `retry` once live delivers them)";
+} elseif(($late = t_foreign_count($conn)) > 0){
+    $unscopedSkipReason = "{$late} such row(s) appeared mid-run";
 }
 
 function t_set_status($conn, $id, $status){
@@ -324,6 +339,12 @@ function t_set_status($conn, $id, $status){
     $stmt->bind_param("si", $status, $id);
     $stmt->execute();
 }
+
+if($unscopedSkipReason !== null){
+    t_skip('the unscoped run and the unscoped reset (batch_size, clamp, oldest-first, status filters)',
+        "NOT RUN, because {$unscopedSkipReason}. Those calls would process or revive them. "
+        . "The scheduler's `run` and `retry` paths are untested this time; the scoped assertions all ran.", 17);
+} else {
 
 // Run: oldest pending first, at most batch_size, and nothing that is not pending.
 $p1 = t_queue_row($conn);
@@ -390,6 +411,7 @@ t_equals('the sent row is not revived', [$row['status'], $row['sent_at']], ['sen
 $row = t_fetch_row($conn, $nobodyId);
 t_equals('the nobody-reachable record stays failed, untouched', [$row['status'], (int) $row['attempts'], $row['last_error']], ['failed', 0, 'nobody could be reached']);
 t_clear_own($conn);
+}
 
 // One row whose database work throws must not end the batch. Forced honestly:
 // the first row already holds the largest attempts value an int(11) column can
@@ -427,6 +449,8 @@ t_ok('the skipped row is logged by id', strpos((string) file_get_contents($GLOBA
 // cannot stop a recommendation being assigned on the live site mid-run, but it
 // can say so if a foreign row was swept up. Same predicate as the guard: a
 // 'sent' row from real use is history, not a casualty.
-t_equals('no pending, failed or dry-run row that is not the test\'s appeared or was changed', t_foreign_count($conn), 0);
+// Compared with the start, not with zero: a foreign row that was already there
+// (the skip case) must come out exactly as it went in.
+t_equals('no pending, failed or dry-run row that is not the test\'s appeared or was changed', t_foreign_snapshot($conn), $foreignAtStart);
 
 t_summary();

@@ -251,11 +251,14 @@ this one.` Just run the command again in a minute.
 
 ## Good to know
 
-- **The test suite (`tests/`) refuses to run while mail is waiting.**
-  `tests/email_worker_test.php` exercises the same unscoped `run` and `retry` the
-  scheduler uses, so it stops with `ABORTED` if the outbox holds a `pending`,
-  `failed` or `dry-run` row that is not its own, and changes nothing. Deliver them
-  first (step 5). `sent` rows and the `(no address)` records never block it.
+- **The test suite (`tests/`) keeps running while mail is waiting, but two
+  assertions sit out.** `tests/email_worker_test.php` also exercises the unscoped
+  `run` and `retry` the scheduler uses. If the outbox holds a `pending`, `failed`
+  or `dry-run` row that is not the test's own (after a dry-run rehearsal, say),
+  it skips just that section and prints a `SKIP` line saying so; the summary
+  counts the skips apart from passes. Everything else runs and touches none of
+  those rows. Deliver them first (step 5) and the full suite runs again. `sent`
+  rows and the `(no address)` records never cause a skip.
 - **Gmail allows roughly 500 messages a day** from one ordinary account. Each
   assignment is one message per recipient, so this is plenty for now. If you ever
   come close, rows will start failing with a quota message, and `retry` will send
